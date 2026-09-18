@@ -14,7 +14,7 @@ services:
     runtime: node
     plan: starter # a disk cannot be mounted on Render's free instances
     region: frankfurt # oregon / ohio / virginia / singapore are the others
-    branch: claude/kitchen-calendar-tv-app-v2dyuc
+    branch: main
     numInstances: 1
     buildCommand: npm install --omit=dev # no dependencies; this is a formality
     startCommand: node server/index.js
