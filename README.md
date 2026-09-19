@@ -94,7 +94,7 @@ a standalone app — it is a proper web app manifest with icons, not a bookmark.
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `PORT` | `4321` | Port to listen on |
-| `HOST` | `0.0.0.0` | Interface to bind |
+| `HOST` | unset | Interface to bind. Unset binds both IPv4 and IPv6 where available, so `localhost` resolves either way |
 | `HEARTH_DATA` | `./data/calendar.json` | Where the calendar is stored |
 | `HEARTH_SEED` | on | Set to `off` to start with an empty calendar |
 | `HEARTH_PIN` | unset | Household passcode. Unset means no sign-in (home network only) |

@@ -16,7 +16,15 @@ import { seedState } from './seed.js';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 const port = Number(process.env.PORT || 4321);
-const host = process.env.HOST || '0.0.0.0';
+
+/*
+ * Binding 0.0.0.0 listens on IPv4 only, and browsers resolve "localhost" to
+ * ::1 first — so the server would start, print its URL, and then refuse the
+ * connection. Omitting the host lets Node bind :: where IPv6 exists (which
+ * accepts IPv4 too) and fall back to 0.0.0.0 where it does not. An explicit
+ * HOST is still honoured for anyone pinning it to one interface.
+ */
+const host = process.env.HOST || undefined;
 const dataFile = process.env.HEARTH_DATA
   ? path.resolve(process.env.HEARTH_DATA)
   : path.join(ROOT, 'data', 'calendar.json');
