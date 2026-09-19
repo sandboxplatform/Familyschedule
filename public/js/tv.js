@@ -70,6 +70,12 @@ const el = {
   todayList: document.getElementById('todayList'),
   whoNext: document.getElementById('whoNext'),
   board: document.getElementById('board'),
+  boardWrap: document.getElementById('boardWrap'),
+  weekNav: document.getElementById('weekNav'),
+  weekLabel: document.getElementById('weekLabel'),
+  weekPrev: document.getElementById('weekPrev'),
+  weekNext: document.getElementById('weekNext'),
+  weekToday: document.getElementById('weekToday'),
   timeline: document.getElementById('timeline'),
   month: document.getElementById('month'),
   viewSwitch: document.getElementById('viewSwitch'),
@@ -86,6 +92,9 @@ const state = {
   days: [],
   today: todayKey(),
   mode: storedView() || 'agenda',
+  /* Weeks away from this one, for paging the week view. Never persisted: a
+     screen rebooting should come back to now, not to whenever it was left. */
+  weekOffset: 0,
   lastMinute: -1,
 };
 
@@ -111,6 +120,9 @@ async function boot() {
     if (button) setMode(button.dataset.view);
   });
   el.themeToggle.addEventListener('click', toggleTheme);
+  el.weekPrev.addEventListener('click', () => stepWeek(-1));
+  el.weekNext.addEventListener('click', () => stepWeek(1));
+  el.weekToday.addEventListener('click', goToThisWeek);
 
   document.addEventListener('keydown', onKey);
   document.addEventListener('mousemove', showCursorBriefly);
@@ -170,11 +182,52 @@ function fetchRange() {
   const today = todayKey();
   const weekStart = state.settings?.weekStart ?? 1;
   if (state.mode === 'month') {
-    const from = startOfWeekKey(startOfMonthKey(today), weekStart);
-    return { from, to: addDays(from, 41) };
+    const { first, weeks } = monthWindow();
+    return { from: first, to: addDays(first, weeks * 7 - 1) };
   }
+  if (state.mode === 'week') {
+    // A week either side of the one on screen, so stepping is instant and the
+    // live stream has something to redraw from before the next fetch lands.
+    const shown = addDays(startOfWeekKey(today, weekStart), (state.weekOffset ?? 0) * 7);
+    return { from: addDays(shown, -7), to: addDays(shown, 20) };
+  }
+
   const from = startOfWeekKey(today, weekStart);
   return { from, to: addDays(from, 20) };
+}
+
+/**
+ * How much of the month to draw, and from when.
+ *
+ * Six weeks always fits the calendar onto the screen and the entries off it: on
+ * a 720p panel that is about 85px a day, which is a date and a "+2 more". A
+ * screen that cannot show the month usefully is better off showing less of it
+ * properly, so the window shrinks to what the height can carry and centres on
+ * this week rather than starting at the 1st — the days either side of today are
+ * the ones being looked for.
+ */
+function monthWindow() {
+  const weekStart = state.settings?.weekStart ?? 1;
+  const today = todayKey();
+  const weeks = monthWeeks();
+
+  if (weeks >= 6) {
+    // The whole month, laid out from the week its 1st falls in.
+    return { first: startOfWeekKey(startOfMonthKey(today), weekStart), weeks: 6, whole: true };
+  }
+
+  const thisWeek = startOfWeekKey(today, weekStart);
+  // Slightly more ahead than behind: a calendar is mostly asked what is coming.
+  const behind = Math.floor((weeks - 1) / 2);
+  return { first: addDays(thisWeek, -behind * 7), weeks, whole: false };
+}
+
+/** Weeks that fit, from the height a row needs to show about four entries. */
+function monthWeeks() {
+  const CHROME = 230; // header, weekday names, footer
+  const ROW = 104; // a date and roughly four entries
+  const available = (window.innerHeight || 0) - CHROME;
+  return Math.max(3, Math.min(6, Math.floor(available / ROW)));
 }
 
 // -- today ----------------------------------------------------------------
@@ -383,6 +436,7 @@ function relativeLabel(date) {
 // -- board ----------------------------------------------------------------
 
 function renderBoard() {
+  renderWeekNav();
   const days = state.mode === 'week' ? weekDays() : upcomingDays();
   el.board.replaceChildren(...days.map(dayColumn));
   requestAnimationFrame(() => {
@@ -397,9 +451,28 @@ function upcomingDays() {
 }
 
 function weekDays() {
-  const start = startOfWeekKey(state.today, state.settings.weekStart);
+  const start = shownWeekStart();
   const index = state.days.findIndex((day) => day.date === start);
   return index === -1 ? state.days.slice(0, 7) : state.days.slice(index, index + 7);
+}
+
+function renderWeekNav() {
+  if (state.mode !== 'week') {
+    el.weekNav.hidden = true;
+    return;
+  }
+  const start = shownWeekStart();
+  el.weekNav.hidden = false;
+  el.weekLabel.textContent = state.weekOffset === 0
+    ? 'This week'
+    : spanLabel(start, addDays(start, 6));
+  el.weekToday.hidden = state.weekOffset === 0;
+}
+
+/** The Monday (or Sunday) of the week currently on screen. */
+function shownWeekStart() {
+  const thisWeek = startOfWeekKey(state.today, state.settings?.weekStart ?? 1);
+  return addDays(thisWeek, state.weekOffset * 7);
 }
 
 function dayColumn(day) {
@@ -658,15 +731,15 @@ function assignLanes(items) {
 // -- month ----------------------------------------------------------------
 
 function renderMonth() {
-  const weekStart = state.settings.weekStart ?? 1;
   const anchor = startOfMonthKey(state.today);
-  const first = startOfWeekKey(anchor, weekStart);
+  const { first, weeks, whole } = monthWindow();
 
   const heading = document.createElement('div');
   heading.className = 'month-head';
   const caption = document.createElement('p');
   caption.className = 'month-name';
-  caption.textContent = monthName(anchor);
+  // A window is not "September", so say which days are actually on screen.
+  caption.textContent = whole ? monthName(anchor) : spanLabel(first, addDays(first, weeks * 7 - 1));
   heading.append(caption);
 
   const names = document.createElement('div');
@@ -679,10 +752,10 @@ function renderMonth() {
 
   const grid = document.createElement('div');
   grid.className = 'month-grid';
+  grid.style.setProperty('--weeks', String(weeks));
 
-  // Six rows always, so the grid does not jump height between months.
   const byDate = new Map(state.days.map((day) => [day.date, day]));
-  for (let i = 0; i < 42; i += 1) {
+  for (let i = 0; i < weeks * 7; i += 1) {
     const date = addDays(first, i);
     grid.append(monthCell(date, byDate.get(date), anchor));
   }
@@ -691,6 +764,30 @@ function renderMonth() {
   requestAnimationFrame(() => {
     for (const list of el.month.querySelectorAll('.month-items')) trimOverflow(list);
   });
+}
+
+/**
+ * The span on screen, as the reader's own locale would write it: "Sep 7 – 27"
+ * or "7–27 Sept" depending on where they are. Building it by hand from two
+ * formatted dates gets the order wrong somewhere — "7 – September 27" — which
+ * is what formatRange exists to avoid.
+ */
+function spanLabel(from, to) {
+  const start = parseKeyLocal(from);
+  const end = parseKeyLocal(to);
+  const options = { day: 'numeric', month: 'short' };
+
+  try {
+    return new Intl.DateTimeFormat(undefined, options).formatRange(start, end);
+  } catch {
+    // Older engines without formatRange still get something readable.
+    return `${start.toLocaleDateString(undefined, options)} – ${end.toLocaleDateString(undefined, options)}`;
+  }
+}
+
+function parseKeyLocal(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
 }
 
 function monthCell(date, day, anchor) {
@@ -926,10 +1023,15 @@ function setMode(mode, { persist = true } = {}) {
   const next = VIEWS.includes(mode) ? mode : 'agenda';
   const widened = needsWiderRange(next) && !needsWiderRange(state.mode);
 
+  if (next !== 'week' && state.weekOffset) {
+    state.weekOffset = 0;
+    clearTimeout(returnTimer);
+  }
+
   state.mode = next;
   el.main.dataset.mode = next;
 
-  el.board.hidden = next === 'day' || next === 'month';
+  el.boardWrap.hidden = next === 'day' || next === 'month';
   el.timeline.hidden = next !== 'day';
   el.month.hidden = next !== 'month';
 
@@ -950,6 +1052,35 @@ function setMode(mode, { persist = true } = {}) {
 
 function needsWiderRange(mode) {
   return mode === 'month';
+}
+
+/**
+ * Steps the week view backwards or forwards. A screen on a wall is left on
+ * whatever somebody last pressed, so it finds its way back to this week on its
+ * own after a while — a kitchen calendar showing last Tuesday is worse than
+ * useless, because it looks current.
+ */
+let returnTimer = null;
+const RETURN_MS = 3 * 60 * 1000;
+
+function stepWeek(by) {
+  if (state.mode !== 'week') return;
+  state.weekOffset += by;
+  scheduleReturnToNow();
+  refresh();
+}
+
+function goToThisWeek() {
+  if (!state.weekOffset) return;
+  state.weekOffset = 0;
+  clearTimeout(returnTimer);
+  refresh();
+}
+
+function scheduleReturnToNow() {
+  clearTimeout(returnTimer);
+  if (!state.weekOffset) return;
+  returnTimer = setTimeout(goToThisWeek, RETURN_MS);
 }
 
 function cycleMode(step = 1, options) {
@@ -1017,6 +1148,18 @@ function shiftPixels() {
 // -- input -----------------------------------------------------------------
 
 function onKey(event) {
+  // Arrows page the week rather than scrolling, which there is nothing to do.
+  if (state.mode === 'week' && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    event.preventDefault();
+    stepWeek(event.key === 'ArrowLeft' ? -1 : 1);
+    return;
+  }
+  if (event.key === 'Home') {
+    event.preventDefault();
+    goToThisWeek();
+    return;
+  }
+
   switch (event.key.toLowerCase()) {
     case 'v':
       cycleMode(event.shiftKey ? -1 : 1);

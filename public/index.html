@@ -39,7 +39,15 @@
         <section class="who-next" id="whoNext" aria-label="Next up for each person"></section>
       </section>
 
-      <section class="board" id="board" aria-label="Upcoming days"></section>
+      <section class="board-wrap" id="boardWrap">
+        <div class="week-nav" id="weekNav" hidden>
+          <button type="button" id="weekPrev" aria-label="Previous week">‹</button>
+          <p class="week-label" id="weekLabel"></p>
+          <button type="button" id="weekNext" aria-label="Next week">›</button>
+          <button type="button" class="week-today" id="weekToday" hidden>This week</button>
+        </div>
+        <section class="board" id="board" aria-label="Upcoming days"></section>
+      </section>
       <section class="timeline" id="timeline" aria-label="Today hour by hour" hidden></section>
       <section class="month" id="month" aria-label="This month" hidden></section>
     </main>

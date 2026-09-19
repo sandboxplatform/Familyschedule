@@ -73,8 +73,8 @@ A bar at the bottom of the display switches between them, and so do the keys:
 | View | Key | What it shows |
 | --- | --- | --- |
 | **Day** | `D` | Today hour by hour, on a rail against the clock, with a line at the current time. Overlapping entries sit side by side. The rail fits itself to the hours actually in use. |
-| **Week** | `W` | The current week, Monday to Sunday, side by side |
-| **Month** | `M` | The whole month, today picked out, with a `+N more` marker on busy days |
+| **Week** | `W` | A week, Monday to Sunday, side by side. `←` and `→` step back and forward through weeks, `Home` returns to this one — and so does the screen itself, after a few minutes, so a wall display cannot be left showing last Tuesday as though it were current |
+| **Month** | `M` | The month, today picked out. A screen too short to show six weeks of entries properly shows fewer weeks around today instead, at full detail, rather than a full month of `+N more` |
 | **Agenda** | `A` | Today's panel plus the next six days — the default |
 
 `V` cycles the views (`Shift`+`V` goes back), `L` switches between light and

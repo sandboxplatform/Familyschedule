@@ -361,6 +361,58 @@ body.show-cursor {
 
 /* -- upcoming board ------------------------------------------------------- */
 
+.board-wrap {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+/* -- week paging ----------------------------------------------------------- */
+
+.week-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.week-nav button {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.week-nav button:hover,
+.week-nav button:focus-visible {
+  color: var(--text);
+  background: var(--surface-strong);
+}
+
+.week-label {
+  min-width: 9rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Only there once you have wandered off this week. */
+.week-nav .week-today {
+  width: auto;
+  padding: 0 0.85rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
 .board {
   display: grid;
   grid-auto-flow: column;
@@ -794,7 +846,8 @@ body.show-cursor {
 .month-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-template-rows: repeat(6, minmax(0, 1fr));
+  /* However many weeks the height can show properly; see monthWindow(). */
+  grid-template-rows: repeat(var(--weeks, 6), minmax(0, 1fr));
   gap: var(--space-2);
   min-height: 0;
 }
@@ -850,11 +903,11 @@ body.show-cursor {
 .month-pill {
   display: block;
   overflow: hidden;
-  padding: 0.1rem 0.4rem;
+  padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
   border-left: 3px solid var(--tint);
   background: color-mix(in srgb, var(--tint) 18%, var(--surface-solid));
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 600;
   line-height: 1.35;
   white-space: nowrap;
@@ -934,6 +987,9 @@ body.show-cursor {
     grid-auto-flow: row;
     grid-auto-rows: minmax(6rem, auto);
     overflow: hidden;
+  }
+  .week-label {
+    min-width: 0;
   }
   .tv-main[data-mode='day'] {
     grid-template-columns: minmax(0, 1fr);
@@ -1034,9 +1090,17 @@ body.show-cursor {
     grid-template-rows: repeat(6, minmax(2.8rem, auto));
   }
 
+  .board-wrap {
+    grid-template-rows: auto auto;
+  }
+
   .board {
     grid-auto-rows: auto;
     overflow: visible;
+  }
+
+  .week-nav {
+    justify-content: center;
   }
 
   .day-col {
