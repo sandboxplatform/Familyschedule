@@ -152,6 +152,10 @@ test('settings are clamped to sane values', () => {
   assert.equal(settings.weekStart, 1);
   assert.equal(settings.theme, 'midnight');
   assert.equal(settings.defaultView, 'agenda');
+  // Absent means the default (open); anything present is read as a boolean.
+  assert.equal(settings.openRegistration, true);
+  assert.equal(validateSettings({ openRegistration: false }).openRegistration, false);
+  assert.equal(validateSettings({ openRegistration: 'yes' }).openRegistration, true);
   assert.equal(settings.rotateSeconds, 600);
   assert.equal(settings.weather.latitude, 90);
   assert.equal(settings.weather.longitude, -180);

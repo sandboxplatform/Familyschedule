@@ -256,6 +256,8 @@ async function handleApi(req, res, url, ctx) {
       sendJson(res, 200, {
         setupRequired: auth.setupRequired,
         authenticated: Boolean(user),
+        // So the sign-in page knows whether to offer signing up at all.
+        canRegister: auth.setupRequired || store.settings.openRegistration,
         user: user ? { id: user.id, email: user.email } : null,
       });
       return;
@@ -294,14 +296,18 @@ async function handleApi(req, res, url, ctx) {
     }
   }
 
-  // Accounts. The first one is open, because there is nobody to authorise it;
-  // after that only somebody already signed in can add another, which is what
-  // keeps a public install from collecting strangers.
+  // Accounts. The first one is always open, because there is nobody to
+  // authorise it. After that it depends on the household: open registration
+  // lets anybody who has the address sign themselves up, and turning it off
+  // means only somebody already signed in can add another.
   if (segments[0] === 'account' || segments[0] === 'accounts') {
     if (segments.length === 1 && method === 'POST') {
       const firstRun = auth.setupRequired;
-      if (!firstRun && !auth.isAuthenticated(req)) {
-        sendJson(res, 401, { error: 'Sign in to add another account' });
+      const open = store.settings.openRegistration;
+      if (!firstRun && !open && !auth.isAuthenticated(req)) {
+        sendJson(res, 403, {
+          error: 'This calendar is invite-only — ask someone in the household to add you',
+        });
         return;
       }
       const body = await readJson(req);

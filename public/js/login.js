@@ -16,9 +16,11 @@ const lede = document.getElementById('lede');
 const swap = document.getElementById('swap');
 
 let creating = false;
-/* True while this is the very first account: the form cannot be switched away
-   from signing up, because there is nothing yet to sign in to. */
+/* True while this is the very first account, which changes what the page says
+   — there is nothing stored yet to sign in to. */
 let firstRun = false;
+/* Whether this household lets anybody sign themselves up. */
+let canRegister = true;
 
 boot();
 
@@ -32,6 +34,7 @@ async function boot() {
       return;
     }
     firstRun = Boolean(state.setupRequired);
+    canRegister = state.canRegister !== false;
     const adding = new URLSearchParams(location.search).has('add');
     setMode(firstRun || adding);
   } catch {
@@ -59,11 +62,12 @@ function setMode(signUp) {
   password.setAttribute('autocomplete', signUp ? 'new-password' : 'current-password');
   confirm.required = signUp;
 
-  // The way across is always offered, including on an install that reports no
-  // accounts. Somebody who is sure they already have one is better served by
-  // being able to try it — and told plainly that nothing is stored here — than
-  // by a form with no way out of it.
-  swap.hidden = false;
+  // Going back to signing in is always offered — somebody sure they already
+  // have an account is better served by being able to try than by a form with
+  // no way out of it. Going the other way is offered only where signing up is
+  // actually allowed, so an invite-only household does not dangle a link that
+  // ends in a refusal.
+  swap.hidden = !signUp && !canRegister;
   swap.replaceChildren(
     document.createTextNode(
       signUp ? 'Already have an account? ' : firstRun ? 'Need to set one up? ' : 'Adding someone new? ',

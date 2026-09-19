@@ -91,24 +91,62 @@ test('the first account is created without signing in, and signs you in', async 
   });
 });
 
-test('a second account cannot be created by a stranger', async () => {
+test('anybody can sign themselves up while registration is open', async () => {
   await withServer(async ({ call, signUp }) => {
     const { cookie } = await signUp();
 
-    const uninvited = await call('/api/account', {
+    // Open is the default: no cookie needed, and no limit on how many.
+    for (const email of ['second@example.com', 'third@example.com', 'fourth@example.com']) {
+      const created = await call('/api/account', { method: 'POST', body: { email, password: PASSWORD } });
+      assert.equal(created.status, 201);
+      // Signing somebody else up never signs them in on this device.
+      assert.equal(created.body.signedIn, false);
+    }
+
+    const invited = await call('/api/account', {
+      method: 'POST',
+      headers: { Cookie: cookie },
+      body: { email: 'fifth@example.com', password: PASSWORD },
+    });
+    assert.equal(invited.status, 201);
+  });
+});
+
+test('closing registration makes it invite-only again', async () => {
+  await withServer(async ({ call, signUp, store }) => {
+    const { cookie } = await signUp();
+    store.updateSettings({ openRegistration: false });
+
+    const stranger = await call('/api/account', {
       method: 'POST',
       body: { email: 'stranger@example.com', password: PASSWORD },
     });
-    assert.equal(uninvited.status, 401);
+    assert.equal(stranger.status, 403);
+    assert.match(stranger.body.error, /invite-only/);
 
+    // Somebody already in the household still can.
     const invited = await call('/api/account', {
       method: 'POST',
       headers: { Cookie: cookie },
       body: { email: 'second@example.com', password: PASSWORD },
     });
     assert.equal(invited.status, 201);
-    // Adding somebody does not sign the new person in on this device.
-    assert.equal(invited.body.signedIn, false);
+
+    // And the sign-in page is told, so it stops offering a form that refuses.
+    assert.equal((await call('/api/session')).body.canRegister, false);
+  });
+});
+
+test('the first account is allowed even with registration closed', async () => {
+  await withServer(async ({ call, store }) => {
+    store.updateSettings({ openRegistration: false });
+    // Nobody exists to invite anyone, so setup has to stay reachable.
+    const first = await call('/api/account', {
+      method: 'POST',
+      body: { email: 'first@example.com', password: PASSWORD },
+    });
+    assert.equal(first.status, 201);
+    assert.equal(first.body.signedIn, true);
   });
 });
 

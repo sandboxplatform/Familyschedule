@@ -622,6 +622,7 @@ function fillSettings() {
   $('defaultViewInput').value = s.defaultView;
   $('rotateInput').value = String(s.rotateSeconds);
   setToggle($('clockToggle'), s.clock24h);
+  setToggle($('openRegistrationToggle'), s.openRegistration);
   setToggle($('weatherToggle'), s.weather.enabled);
   $('weatherFields').hidden = !s.weather.enabled;
   $('weatherLabel').value = s.weather.label || '';
@@ -639,6 +640,7 @@ async function saveSettings() {
     weekStart: Number($('weekStartInput').value),
     defaultView: $('defaultViewInput').value,
     clock24h: $('clockToggle').getAttribute('aria-pressed') === 'true',
+    openRegistration: $('openRegistrationToggle').getAttribute('aria-pressed') === 'true',
     rotateSeconds: Number($('rotateInput').value),
     weather: {
       enabled: $('weatherToggle').getAttribute('aria-pressed') === 'true',
@@ -803,6 +805,9 @@ function wire() {
   $('deletePerson').addEventListener('click', removePerson);
 
   $('clockToggle').addEventListener('click', () => toggleSwitch($('clockToggle')));
+  $('openRegistrationToggle').addEventListener('click', () =>
+    toggleSwitch($('openRegistrationToggle')),
+  );
   $('weatherToggle').addEventListener('click', () => {
     const on = toggleSwitch($('weatherToggle'));
     $('weatherFields').hidden = !on;

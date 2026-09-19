@@ -66,6 +66,7 @@ export function defaultSettings() {
     weekStart: 1,
     theme: 'midnight',
     defaultView: 'agenda',
+    openRegistration: true,
     clock24h: false,
     rotateSeconds: 0,
     weather: { enabled: false, latitude: null, longitude: null, unit: 'celsius', label: '' },
@@ -400,6 +401,8 @@ export function validateSettings(input) {
     defaultView: ['agenda', 'day', 'week', 'month'].includes(input?.defaultView)
       ? input.defaultView
       : base.defaultView,
+    openRegistration:
+      input?.openRegistration === undefined ? base.openRegistration : Boolean(input.openRegistration),
     clock24h: Boolean(input?.clock24h),
     rotateSeconds: clampNumber(input?.rotateSeconds, 0, 0, 600),
     weather: {

@@ -202,9 +202,15 @@ install — it's `node --test`.
 
 The first person to open a new install is asked to create an account — an email
 and a password — and is signed in by the act of doing it. After that the same
-page is a sign-in, and further accounts are added from **Settings → Add another
-account** by somebody already signed in, so a public install cannot collect
-strangers.
+page offers both, and anybody who has the address can sign themselves up.
+
+That is the default because a household is usually several people on several
+phones, and passing an invite around to add each one is friction nobody asked
+for. It does mean the address is the only thing standing between a stranger and
+your calendar, so **Settings → Anyone with the address can sign up** turns it
+off, after which only somebody already signed in can add an account. The very
+first account is allowed either way — otherwise an install with no accounts
+could never get one.
 
 Nothing is readable without an account. The API answers `401` and pages
 redirect to `/login`; only the sign-in page, its assets and `/api/health` stay
