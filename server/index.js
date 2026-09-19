@@ -18,6 +18,14 @@ import { seedState } from './seed.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
+/* Filesystems that are the machine talking to itself rather than somewhere to
+   keep a calendar: kernel interfaces, memory-backed, or read-only images. */
+const PSEUDO_FILESYSTEMS = new Set([
+  'proc', 'sysfs', 'devtmpfs', 'tmpfs', 'devpts', 'cgroup', 'cgroup2', 'mqueue',
+  'squashfs', 'overlay', 'securityfs', 'debugfs', 'tracefs', 'bpf', 'pstore',
+  'fusectl', 'configfs', 'nsfs', 'binfmt_misc', 'autofs', 'hugetlbfs', 'ramfs',
+]);
+
 const port = Number(process.env.PORT || 4321);
 
 /*
@@ -179,21 +187,65 @@ function mountedVolume() {
  * Storing the calendar inside the app directory on a hosted platform means it
  * is gone at the next deploy. That is silent and unrecoverable, so it is worth
  * shouting about while somebody is still watching the deploy log.
+ *
+ * Where a disk is mounted somewhere we do not look, say so by name: "mount it
+ * at /data" is unhelpful advice to somebody who has already mounted one, just
+ * not there.
  */
 function warnIfEphemeral() {
   const host = platform();
   if (!host || volume || process.env.HEARTH_DATA) return;
-  console.warn(
-    [
-      '',
-      `  ⚠  Running on ${host} with no volume — the calendar is being written`,
-      `     inside the container, and every deploy will wipe it.`,
-      '',
-      '     Mount a volume at /data (no other setting needed), or point',
-      '     HEARTH_DATA at one you have mounted elsewhere.',
-      '',
-    ].join('\n'),
-  );
+
+  const lines = [
+    '',
+    `  ⚠  Running on ${host} with no volume — the calendar is being written`,
+    '     inside the container, and every deploy will wipe it.',
+    '',
+  ];
+
+  const seen = otherMounts();
+  if (seen.length) {
+    lines.push('     Disks are mounted here, though none where Hearth looks:');
+    for (const mount of seen) lines.push(`       ${mount}`);
+    lines.push('');
+    lines.push(`     Either remount one at /data, or set HEARTH_DATA, e.g.`);
+    lines.push(`       HEARTH_DATA=${seen[0]}/calendar.db`);
+  } else {
+    lines.push('     Mount a volume at /data (no other setting needed), or point');
+    lines.push('     HEARTH_DATA at one you have mounted elsewhere.');
+  }
+  lines.push('');
+  console.warn(lines.join('\n'));
+}
+
+/**
+ * Real, writable disks mounted somewhere other than the places we look. Used
+ * only to describe the situation — never chosen automatically, because writing
+ * a household's calendar into whatever happened to be mounted is a worse
+ * failure than the one being reported.
+ */
+function otherMounts() {
+  let table;
+  try {
+    table = fs.readFileSync('/proc/mounts', 'utf8');
+  } catch {
+    return [];
+  }
+
+  const found = [];
+  for (const line of table.split('\n')) {
+    const [, point, type] = line.split(' ');
+    if (!point || point === '/' || PSEUDO_FILESYSTEMS.has(type)) continue;
+    if (/^\/(proc|sys|dev|run|etc|boot|usr|lib|bin|sbin|opt)(\/|$)/.test(point)) continue;
+    try {
+      if (!fs.statSync(point).isDirectory()) continue;
+      fs.accessSync(point, fs.constants.W_OK);
+    } catch {
+      continue;
+    }
+    if (!found.includes(point)) found.push(point);
+  }
+  return found;
 }
 
 /**
