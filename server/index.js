@@ -45,6 +45,7 @@ const store = new Store(dataFile);
 await store.load({ seed: seeding ? seedState : undefined });
 
 warnIfEphemeral();
+warnIfNoPages();
 
 const server = createApp(store);
 
@@ -122,6 +123,25 @@ function warnIfEphemeral() {
       '',
       '     Mount a volume at /data (no other setting needed), or point',
       '     HEARTH_DATA at one you have mounted elsewhere.',
+      '',
+    ].join('\n'),
+  );
+}
+
+/**
+ * The front end is plain files on disk, so a build or image that leaves out
+ * public/ still starts, still answers the API, and still signs people in —
+ * then serves a 404 for every page. Saying so at start-up turns a puzzling
+ * blank site into one line in the deploy log.
+ */
+function warnIfNoPages() {
+  const index = fileURLToPath(new URL('public/index.html', `file://${ROOT}`));
+  if (fs.existsSync(index)) return;
+  console.warn(
+    [
+      '',
+      '  ⚠  public/ is missing from this build — the API will answer but every',
+      `     page will 404. Expected it at ${path.dirname(index)}`,
       '',
     ].join('\n'),
   );
