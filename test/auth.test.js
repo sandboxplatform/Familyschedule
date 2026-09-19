@@ -206,6 +206,19 @@ test('a signed-out browser is sent to the sign-in page, not the calendar', async
   });
 });
 
+test('signing in is answerable on an install with no accounts', async () => {
+  await withServer(async ({ call }) => {
+    // The page always offers the sign-in form, so the endpoint has to answer
+    // sensibly rather than fall over when there is nothing to match against.
+    const attempt = await call('/api/session', {
+      method: 'POST',
+      body: { email: 'someone@example.com', password: 'anything-at-all' },
+    });
+    assert.equal(attempt.status, 401);
+    assert.equal((await call('/api/session')).body.setupRequired, true);
+  });
+});
+
 test('the sign-in page and its assets stay reachable', async () => {
   await withServer(async ({ call }) => {
     assert.equal((await call('/login')).status, 200);

@@ -46,9 +46,11 @@ function setMode(signUp) {
 
   lede.textContent = signUp
     ? firstRun
-      ? 'Create an account to set up the family calendar.'
+      ? 'Nobody has set this calendar up yet. The first account you create is the household account.'
       : 'Create another account for this household.'
-    : 'Sign in to see the family calendar.';
+    : firstRun
+      ? 'There are no accounts on this calendar yet — create the first one to get in.'
+      : 'Sign in to see the family calendar.';
 
   document.title = signUp ? 'Hearth — Create account' : 'Hearth — Sign in';
   submit.textContent = signUp ? 'Create account' : 'Sign in';
@@ -57,13 +59,17 @@ function setMode(signUp) {
   password.setAttribute('autocomplete', signUp ? 'new-password' : 'current-password');
   confirm.required = signUp;
 
-  swap.hidden = firstRun;
-  if (!firstRun) {
-    swap.replaceChildren(
-      document.createTextNode(signUp ? 'Already have an account? ' : 'Adding someone new? '),
-      link(signUp ? 'Sign in' : 'Create an account', () => setMode(!signUp)),
-    );
-  }
+  // The way across is always offered, including on an install that reports no
+  // accounts. Somebody who is sure they already have one is better served by
+  // being able to try it — and told plainly that nothing is stored here — than
+  // by a form with no way out of it.
+  swap.hidden = false;
+  swap.replaceChildren(
+    document.createTextNode(
+      signUp ? 'Already have an account? ' : firstRun ? 'Need to set one up? ' : 'Adding someone new? ',
+    ),
+    link(signUp ? 'Sign in' : 'Create an account', () => setMode(!signUp)),
+  );
   hideError();
 }
 
@@ -131,7 +137,11 @@ form.addEventListener('submit', async (event) => {
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      showError(payload.error || 'That did not work — try again', password);
+      const message =
+        !creating && firstRun
+          ? 'This calendar has no accounts stored — create one to get in.'
+          : payload.error || 'That did not work — try again';
+      showError(message, password);
       return;
     }
 
