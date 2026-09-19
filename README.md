@@ -212,9 +212,11 @@ device** button at the bottom of the editor's Settings tab.
 
 **2. Give it a real disk.** The calendar is a file. On a platform with an
 ephemeral filesystem it needs a mounted volume, or every deploy starts the
-family from scratch. Mount one at `/data` and Hearth finds it — on Railway, Fly
-or Render, which say so through their own environment. Anywhere else, point
-`HEARTH_DATA` at it. A hosted deploy running without one says so loudly in its
+family from scratch. Mount one at `/data`, `/var/hearth` or `/app/data` and Hearth
+finds it — on Railway, Fly or Render, which say so through their own
+environment, and in this repo's Docker image, which says so itself. It looks
+for a real mount rather than a directory of that name, so an empty lookalike
+is never mistaken for storage. Anywhere else, point `HEARTH_DATA` at it. A hosted deploy running without one says so loudly in its
 start-up log.
 
 TLS is expected to be terminated by the platform or your reverse proxy; when it

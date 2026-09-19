@@ -12,7 +12,11 @@ RUN mkdir -p /app/data && chown -R node:node /app
 USER node
 
 ENV PORT=4321
-ENV HEARTH_DATA=/app/data/calendar.json
+# Declares this as a deployment, not a checkout: a volume mounted anywhere we
+# look for one is used, and the demo household is left out. Pinning HEARTH_DATA
+# here instead would quietly ignore a volume mounted at /data, which is where
+# a host's dashboard puts one by default.
+ENV HEARTH_HOSTED=1
 VOLUME ["/app/data"]
 EXPOSE 4321
 

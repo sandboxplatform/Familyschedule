@@ -68,6 +68,8 @@ function platform() {
   if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID) return 'Railway';
   if (process.env.FLY_APP_NAME) return 'Fly';
   if (process.env.RENDER) return 'Render';
+  // Set by our own image, which is a deployment wherever it is running.
+  if (process.env.HEARTH_HOSTED) return 'Docker';
   return null;
 }
 
@@ -79,9 +81,22 @@ function platform() {
  */
 function mountedVolume() {
   if (!platform()) return null;
-  for (const candidate of ['/data', '/var/hearth']) {
+
+  // A mount sits on its own device; a directory the image happened to create
+  // shares one with the root filesystem. That distinction is the whole point —
+  // /app/data exists in our image whether or not anything is mounted over it,
+  // and treating the empty one as storage is how a calendar disappears.
+  let rootDevice;
+  try {
+    rootDevice = fs.statSync('/').dev;
+  } catch {
+    return null;
+  }
+
+  for (const candidate of ['/data', '/var/hearth', '/app/data']) {
     try {
-      if (!fs.statSync(candidate).isDirectory()) continue;
+      const stat = fs.statSync(candidate);
+      if (!stat.isDirectory() || stat.dev === rootDevice) continue;
       fs.accessSync(candidate, fs.constants.W_OK);
       return candidate;
     } catch {
