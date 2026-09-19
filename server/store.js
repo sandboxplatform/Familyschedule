@@ -1,19 +1,28 @@
 /**
  * Persistence.
  *
- * A household calendar is a few hundred rows at most, so the store is a single
- * JSON document written atomically (tmp file + rename) with an in-memory copy
- * as the source of truth for reads. No database to install, no migrations to
- * run, and the whole family's data is one file you can back up or hand over.
+ * Rows live in SQLite (see db.js); this keeps a copy in memory because reads
+ * are the hot path — expanding a repeating event across a month touches every
+ * event there is, on every redraw of every screen — and a household calendar
+ * is small enough to hold. Writes go to the database inside a transaction, so
+ * what a phone saves is durable before the save is acknowledged.
  */
 
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 
 import { isDateKey, isTimeKey, compareKeys } from './dates.js';
 import { FREQUENCIES, normalizeRule } from './recurrence.js';
+import {
+  importLegacyFile,
+  readEvents,
+  readMembers,
+  readSettings,
+  transaction,
+  writeEvents,
+  writeMembers,
+  writeSettings,
+} from './db.js';
 
 export const CATEGORIES = [
   'general',
@@ -68,29 +77,43 @@ export function emptyState() {
 }
 
 export class Store extends EventEmitter {
-  #file;
+  #db;
   #state;
-  #writing = null;
-  #queued = false;
 
-  constructor(file) {
+  constructor(db) {
     super();
-    this.#file = file;
+    this.#db = db;
     this.#state = emptyState();
   }
 
-  get file() {
-    return this.#file;
+  get db() {
+    return this.#db;
   }
 
-  async load({ seed } = {}) {
-    try {
-      const raw = await fs.readFile(this.#file, 'utf8');
-      this.#state = migrate(JSON.parse(raw));
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-      this.#state = seed ? seed() : emptyState();
-      await this.#flush();
+  /**
+   * Loads what is already there, importing a pre-database calendar.json first
+   * if one is sitting next to it, and seeding only a genuinely empty install.
+   */
+  async load({ seed, legacyFile } = {}) {
+    if (legacyFile) {
+      const imported = importLegacyFile(this.#db, legacyFile, migrate);
+      if (imported) this.emit('imported', imported);
+    }
+
+    this.#state = {
+      version: SCHEMA_VERSION,
+      settings: validateSettings({ ...defaultSettings(), ...readSettings(this.#db) }),
+      members: readMembers(this.#db),
+      events: readEvents(this.#db),
+    };
+
+    const empty = !this.#state.members.length && !this.#state.events.length;
+    if (empty && seed) {
+      this.#state = migrate(seed());
+      this.#writeAll();
+    } else if (empty) {
+      // Still write the defaults, so settings exist to be read back.
+      this.#writeAll();
     }
     return this.snapshot();
   }
@@ -213,39 +236,37 @@ export class Store extends EventEmitter {
     return this.snapshot();
   }
 
+  /**
+   * Writes the touched scope and announces the change. The write is synchronous
+   * and transactional: an event is on disk before the phone that saved it is
+   * told so, which the previous debounced file write could not promise.
+   */
   #commit(scope) {
+    try {
+      transaction(this.#db, () => {
+        if (scope === 'members' || scope === 'all') writeMembers(this.#db, this.#state.members);
+        if (scope === 'members' || scope === 'events' || scope === 'all') {
+          writeEvents(this.#db, this.#state.events);
+        }
+        if (scope === 'settings' || scope === 'all') writeSettings(this.#db, this.#state.settings);
+      });
+    } catch (error) {
+      this.emit('error', error);
+      throw error;
+    }
     this.emit('change', { scope, at: Date.now() });
-    this.#flush().catch((error) => this.emit('error', error));
   }
 
-  /**
-   * Serializes writes: while one write is in flight, further commits collapse
-   * into a single follow-up write of the newest state.
-   */
-  async #flush() {
-    if (this.#writing) {
-      this.#queued = true;
-      return this.#writing;
-    }
-    this.#writing = (async () => {
-      try {
-        do {
-          this.#queued = false;
-          const payload = JSON.stringify(this.#state, null, 2);
-          await fs.mkdir(path.dirname(this.#file), { recursive: true });
-          const tmp = `${this.#file}.tmp`;
-          await fs.writeFile(tmp, payload, 'utf8');
-          await fs.rename(tmp, this.#file);
-        } while (this.#queued);
-      } finally {
-        this.#writing = null;
-      }
-    })();
-    return this.#writing;
+  #writeAll() {
+    transaction(this.#db, () => {
+      writeSettings(this.#db, this.#state.settings);
+      writeMembers(this.#db, this.#state.members);
+      writeEvents(this.#db, this.#state.events);
+    });
   }
 
   async close() {
-    if (this.#writing) await this.#writing;
+    this.#db.close();
   }
 }
 

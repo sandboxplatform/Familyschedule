@@ -5,25 +5,31 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { Store, migrate, validateEvent, validateSettings, ValidationError } from '../server/store.js';
+import { openDatabase } from '../server/db.js';
 import { seedState } from '../server/seed.js';
 
 async function tempStore() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hearth-'));
-  const store = new Store(path.join(dir, 'calendar.json'));
+  const file = path.join(dir, 'calendar.db');
+  const store = new Store(openDatabase(file));
   await store.load();
-  return { store, dir };
+  return { store, dir, file };
 }
 
-test('a fresh store starts empty and writes its file', async () => {
-  const { store } = await tempStore();
+test('a fresh store starts empty and creates its database', async () => {
+  const { store, file } = await tempStore();
   assert.equal(store.events.length, 0);
+  const tables = store.db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+    .all()
+    .map((row) => row.name);
+  assert.deepEqual(tables, ['event_members', 'events', 'members', 'meta', 'settings', 'users']);
   await store.close();
-  const raw = JSON.parse(await fs.readFile(store.file, 'utf8'));
-  assert.equal(raw.version, 1);
+  await fs.access(file);
 });
 
-test('events round-trip through disk', async () => {
-  const { store } = await tempStore();
+test('events round-trip through the database', async () => {
+  const { store, file } = await tempStore();
   const member = store.createMember({ name: 'Ava' });
   const created = store.createEvent({
     title: 'Piano',
@@ -35,21 +41,24 @@ test('events round-trip through disk', async () => {
   });
   await store.close();
 
-  const reopened = new Store(store.file);
+  const reopened = new Store(openDatabase(file));
   await reopened.load();
   assert.equal(reopened.events.length, 1);
   assert.equal(reopened.events[0].title, 'Piano');
   assert.deepEqual(reopened.events[0].memberIds, [created.memberIds[0]]);
 });
 
-test('rapid writes all land (the last one wins on disk)', async () => {
-  const { store } = await tempStore();
+test('rapid writes all land', async () => {
+  const { store, file } = await tempStore();
   for (let i = 0; i < 25; i += 1) {
     store.createEvent({ title: `Event ${i}`, date: '2026-09-10' });
   }
   await store.close();
-  const raw = JSON.parse(await fs.readFile(store.file, 'utf8'));
-  assert.equal(raw.events.length, 25);
+
+  const reopened = new Store(openDatabase(file));
+  await reopened.load();
+  assert.equal(reopened.events.length, 25);
+  await reopened.close();
 });
 
 test('validation rejects nonsense', async () => {

@@ -17,6 +17,7 @@ import { expandEvents, groupByDate } from './recurrence.js';
 import { CATEGORIES, PALETTE, ValidationError, NotFoundError } from './store.js';
 import { WeatherService } from './weather.js';
 import { clientId, createAuth, isSecureRequest } from './auth.js';
+import { Accounts } from './accounts.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const MAX_BODY_BYTES = 256 * 1024;
@@ -39,7 +40,8 @@ const MIME = {
 export function createApp(store, {
   weather = new WeatherService(),
   publicDir = PUBLIC_DIR,
-  auth = createAuth(),
+  accounts = new Accounts(store.db),
+  auth = createAuth({ db: store.db, accounts }),
 } = {}) {
   const clients = new Set();
 
@@ -48,12 +50,12 @@ export function createApp(store, {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     try {
-      if (auth.enabled && !isPublic(url.pathname) && !auth.isAuthenticated(req)) {
-        denyUnauthenticated(req, res, url);
+      if (!isPublic(url.pathname) && !auth.isAuthenticated(req)) {
+        denyUnauthenticated(req, res, url, auth);
         return;
       }
       if (url.pathname.startsWith('/api/')) {
-        await handleApi(req, res, url, { store, weather, clients, auth });
+        await handleApi(req, res, url, { store, weather, clients, auth, accounts });
         return;
       }
       await serveStatic(req, res, url, publicDir);
@@ -79,28 +81,31 @@ export function createApp(store, {
 // -- API ------------------------------------------------------------------
 
 /**
- * Paths that stay open when a passcode is set: the sign-in page and the assets
- * it needs, the session endpoints themselves, and the health probe platforms
- * poll. None of them expose calendar data.
+ * Paths that stay open to a signed-out visitor: the sign-in page and the assets
+ * it needs, the session and account endpoints themselves, and the health probe
+ * platforms poll. None of them expose calendar data — /api/account refuses on
+ * its own once an account exists.
  */
 function isPublic(pathname) {
-  if (pathname === '/api/session' || pathname === '/api/health') return true;
+  if (pathname === '/api/session' || pathname === '/api/account') return true;
+  if (pathname === '/api/health') return true;
   if (pathname === '/login') return true;
   return /^\/(css|js|icons)\//.test(pathname) || pathname === '/manifest.webmanifest';
 }
 
-function denyUnauthenticated(req, res, url) {
+function denyUnauthenticated(req, res, url, auth) {
   if (url.pathname.startsWith('/api/')) {
     sendJson(res, 401, { error: 'Sign in to continue' });
     return;
   }
   const next = encodeURIComponent(url.pathname + url.search);
-  res.writeHead(302, { Location: `/login?next=${next}`, 'Cache-Control': 'no-store' });
+  const where = auth.setupRequired ? '/login?setup=1' : `/login?next=${next}`;
+  res.writeHead(302, { Location: where, 'Cache-Control': 'no-store' });
   res.end();
 }
 
 async function handleApi(req, res, url, ctx) {
-  const { store, weather, clients, auth } = ctx;
+  const { store, weather, clients, auth, accounts } = ctx;
   const route = url.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '');
   const segments = route ? route.split('/') : [];
   const method = req.method.toUpperCase();
@@ -113,12 +118,13 @@ async function handleApi(req, res, url, ctx) {
 
   // GET /api/bootstrap — everything a client needs to render its first frame.
   if (segments[0] === 'bootstrap' && method === 'GET') {
+    const me = auth.currentUser(req);
     sendJson(res, 200, {
       settings: store.settings,
       members: store.members,
       categories: CATEGORIES,
       palette: PALETTE,
-      authEnabled: auth.enabled,
+      user: me ? { id: me.id, email: me.email } : null,
       today: todayKey(),
       serverTime: new Date().toISOString(),
     });
@@ -233,38 +239,110 @@ async function handleApi(req, res, url, ctx) {
     return;
   }
 
-  // The household passcode: POST to sign in, DELETE to sign out, GET to ask
-  // whether signing in is even a thing on this install.
+  // Sessions: GET to ask where this install stands, POST to sign in, DELETE to
+  // sign out.
   if (segments[0] === 'session') {
     if (method === 'GET') {
-      sendJson(res, 200, { required: auth.enabled, authenticated: auth.isAuthenticated(req) });
+      const user = auth.currentUser(req);
+      sendJson(res, 200, {
+        setupRequired: auth.setupRequired,
+        authenticated: Boolean(user),
+        user: user ? { id: user.id, email: user.email } : null,
+      });
       return;
     }
     if (method === 'POST') {
-      if (!auth.enabled) {
-        sendJson(res, 200, { ok: true, required: false });
-        return;
-      }
       const body = await readJson(req);
-      const result = auth.attempt(body.pin, clientId(req));
+      const result = await auth.attempt(
+        { email: body.email, password: body.password },
+        clientId(req),
+      );
       if (!result.ok) {
         const status = result.retryAfterSeconds ? 429 : 401;
         const headers = result.retryAfterSeconds
           ? { 'Retry-After': String(result.retryAfterSeconds) }
           : undefined;
-        sendJson(res, status, {
-          error: result.retryAfterSeconds
-            ? `Too many attempts — try again in ${Math.ceil(result.retryAfterSeconds / 60)} min`
-            : 'That passcode is not right',
-        }, headers);
+        sendJson(
+          res,
+          status,
+          {
+            error: result.retryAfterSeconds
+              ? `Too many attempts — try again in ${Math.ceil(result.retryAfterSeconds / 60)} min`
+              : 'That email and password do not match',
+          },
+          headers,
+        );
         return;
       }
-      res.setHeader('Set-Cookie', auth.cookie({ secure: isSecureRequest(req) }));
-      sendJson(res, 200, { ok: true });
+      res.setHeader('Set-Cookie', auth.cookie(result.user.id, { secure: isSecureRequest(req) }));
+      sendJson(res, 200, { ok: true, user: { id: result.user.id, email: result.user.email } });
       return;
     }
     if (method === 'DELETE') {
       res.setHeader('Set-Cookie', auth.clearCookie({ secure: isSecureRequest(req) }));
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+  }
+
+  // Accounts. The first one is open, because there is nobody to authorise it;
+  // after that only somebody already signed in can add another, which is what
+  // keeps a public install from collecting strangers.
+  if (segments[0] === 'account' || segments[0] === 'accounts') {
+    if (segments.length === 1 && method === 'POST') {
+      const firstRun = auth.setupRequired;
+      if (!firstRun && !auth.isAuthenticated(req)) {
+        sendJson(res, 401, { error: 'Sign in to add another account' });
+        return;
+      }
+      const body = await readJson(req);
+      const user = await accounts.create({ email: body.email, password: body.password });
+
+      // Whoever sets the household up is signed in by the act of doing it.
+      if (firstRun) {
+        res.setHeader('Set-Cookie', auth.cookie(user.id, { secure: isSecureRequest(req) }));
+      }
+      sendJson(res, 201, { user, signedIn: firstRun });
+      return;
+    }
+
+    if (segments.length === 1 && method === 'GET') {
+      if (!auth.isAuthenticated(req)) {
+        sendJson(res, 401, { error: 'Sign in to continue' });
+        return;
+      }
+      sendJson(res, 200, { users: accounts.list() });
+      return;
+    }
+
+    if (segments.length === 2 && method === 'DELETE') {
+      const me = auth.currentUser(req);
+      if (!me) {
+        sendJson(res, 401, { error: 'Sign in to continue' });
+        return;
+      }
+      accounts.delete(segments[1]);
+      if (segments[1] === me.id) {
+        res.setHeader('Set-Cookie', auth.clearCookie({ secure: isSecureRequest(req) }));
+      }
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (segments.length === 2 && segments[1] === 'password' && method === 'POST') {
+      const me = auth.currentUser(req);
+      if (!me) {
+        sendJson(res, 401, { error: 'Sign in to continue' });
+        return;
+      }
+      const body = await readJson(req);
+      // Changing a password needs the current one, so a borrowed screen cannot
+      // be used to lock its owner out.
+      if (!(await accounts.verify({ email: me.email, password: body.current }))) {
+        sendJson(res, 401, { error: 'Your current password is not right' });
+        return;
+      }
+      await accounts.changePassword(me.id, body.password);
       sendJson(res, 200, { ok: true });
       return;
     }

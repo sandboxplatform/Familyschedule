@@ -6,28 +6,46 @@ import path from 'node:path';
 
 import { createApp } from '../server/app.js';
 import { Store } from '../server/store.js';
+import { openDatabase } from '../server/db.js';
 import { todayKey } from '../server/dates.js';
 
+/**
+ * Every route but the handful that let somebody sign in is behind an account,
+ * so the harness makes one and carries its cookie. `call` is signed in;
+ * `anonymous` deliberately is not, for the tests that check the gate.
+ */
 async function withServer(run) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hearth-api-'));
-  const store = new Store(path.join(dir, 'calendar.json'));
+  const store = new Store(openDatabase(path.join(dir, 'calendar.db')));
   await store.load();
   const server = createApp(store, { weather: { get: async () => null } });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  const call = async (path, options = {}) => {
+  const anonymous = async (path, options = {}) => {
     const response = await fetch(`${base}${path}`, {
       ...options,
-      headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: {
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.headers || {}),
+      },
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
     const text = await response.text();
     return { status: response.status, body: text ? JSON.parse(text) : null, response };
   };
 
+  const created = await anonymous('/api/account', {
+    method: 'POST',
+    body: { email: 'test@example.com', password: 'a-good-password' },
+  });
+  const cookie = created.response.headers.get('set-cookie').split(';')[0];
+
+  const call = (path, options = {}) =>
+    anonymous(path, { ...options, headers: { ...(options.headers || {}), Cookie: cookie } });
+
   try {
-    await run({ call, store, base });
+    await run({ call, anonymous, cookie, store, base });
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await store.close();
@@ -149,9 +167,12 @@ test('members and settings round-trip over HTTP', async () => {
 });
 
 test('the stream pushes a frame when something changes', async () => {
-  await withServer(async ({ base, store }) => {
+  await withServer(async ({ base, store, cookie }) => {
     const controller = new AbortController();
-    const response = await fetch(`${base}/api/stream`, { signal: controller.signal });
+    const response = await fetch(`${base}/api/stream`, {
+      signal: controller.signal,
+      headers: { Cookie: cookie },
+    });
     assert.equal(response.headers.get('content-type'), 'text/event-stream; charset=utf-8');
 
     const reader = response.body.getReader();

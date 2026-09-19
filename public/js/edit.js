@@ -70,7 +70,7 @@ const state = {
   categories: [],
   palette: [],
   days: [],
-  authEnabled: false,
+  user: null,
   from: todayKey(),
   draft: null,
   person: null,
@@ -96,15 +96,16 @@ async function boot() {
   });
 }
 
-function applyBootstrap({ settings, members, categories, palette, authEnabled }) {
+function applyBootstrap({ settings, members, categories, palette, user }) {
   state.settings = settings;
   state.members = members;
   state.memberMap = new Map(members.map((m) => [m.id, m]));
   state.categories = categories;
   state.palette = palette;
-  state.authEnabled = Boolean(authEnabled);
+  state.user = user || null;
   ui.root.dataset.theme = settings.theme;
-  $('signOut').hidden = !state.authEnabled;
+  $('signOut').hidden = false;
+  $('signedInAs').textContent = state.user ? state.user.email : '';
   renderPeople();
   fillSettings();
   renderCategoryChips();
@@ -658,7 +659,7 @@ async function saveSettings() {
 }
 
 async function signOut() {
-  if (!confirm('Sign out of this device? You will need the household passcode again.')) return;
+  if (!confirm('Sign out of this device? You will need your email and password again.')) return;
   try {
     await api.signOut();
   } finally {

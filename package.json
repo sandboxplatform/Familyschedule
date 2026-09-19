@@ -5,7 +5,7 @@
   "description": "Hearth — a family calendar for the kitchen TV, with a mobile editor.",
   "type": "module",
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.5"
   },
   "scripts": {
     "start": "node server/index.js",

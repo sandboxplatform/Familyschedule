@@ -138,12 +138,17 @@
       <div class="section-title"><h2>This install</h2></div>
       <p class="hint">
         TV display: <a class="linkish" id="tvLink" href="/">/</a><br />
-        Everything is stored on this machine in <code>data/calendar.json</code>.
+        Everything is stored on this machine in <code>data/calendar.db</code>.
       </p>
 
       <button class="btn btn-primary btn-block" id="saveSettings" type="button" style="margin-top: 1.25rem">
         Save settings
       </button>
+
+      <p class="note" style="margin-top: 1.25rem">
+        Signed in as <strong id="signedInAs"></strong>.
+        <a class="linkish" href="/login?add=1">Add another account</a>
+      </p>
 
       <button class="btn btn-ghost btn-block" id="signOut" type="button" hidden style="margin-top: 0.75rem">
         Sign out of this device

@@ -1,16 +1,20 @@
 /**
- * Optional access gate.
+ * The access gate.
  *
- * Hearth on a home network needs no login — it is a fridge, not a bank. The
- * moment it is reachable from the internet that stops being true, so setting
- * HEARTH_PIN turns on a shared household passcode.
+ * Everything is behind an account: there is no anonymous mode, because the one
+ * that used to exist was a shared passcode in an environment variable and an
+ * install with it unset was wide open to anyone who found the address.
  *
- * The session secret is derived from the passcode itself, which means there is
- * no key file to persist, sessions survive restarts and redeploys, and changing
- * the passcode signs everybody out.
+ * Sessions are a signed cookie carrying the account id — no session table to
+ * clean up, and a cookie that survives a restart, which matters for a screen on
+ * a wall that nobody wants to sign in again every time the box reboots. The
+ * signing key lives in the database, so it persists without a key file, and
+ * rotating it signs everybody out.
  */
 
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+
+import { readMeta, writeMeta } from './db.js';
 
 export const SESSION_COOKIE = 'hearth_session';
 
@@ -18,65 +22,70 @@ const DEFAULT_MAX_AGE_DAYS = 365;
 const ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 8;
 
-export function createAuth({
-  pin = process.env.HEARTH_PIN,
-  pepper = process.env.HEARTH_SECRET || '',
-  maxAgeDays = DEFAULT_MAX_AGE_DAYS,
-  now = () => Date.now(),
-} = {}) {
-  const passcode = typeof pin === 'string' ? pin.trim() : '';
+/** The signing key, made on first run and kept in the database thereafter. */
+export function sessionSecret(db) {
+  const existing = readMeta(db, 'session_secret');
+  if (existing) return Buffer.from(existing, 'hex');
+  const secret = randomBytes(32);
+  writeMeta(db, 'session_secret', secret.toString('hex'));
+  return secret;
+}
 
-  if (!passcode) {
-    // No passcode configured: every request is allowed through, and the
-    // session endpoints report that there is nothing to log in to.
-    return {
-      enabled: false,
-      isAuthenticated: () => true,
-      attempt: () => ({ ok: true }),
-      cookie: () => '',
-      clearCookie: () => '',
-    };
-  }
-
-  const secret = createHash('sha256').update(`hearth\u0000${passcode}\u0000${pepper}`).digest();
+export function createAuth({ db, accounts, maxAgeDays = DEFAULT_MAX_AGE_DAYS, now = () => Date.now() }) {
+  const secret = sessionSecret(db);
   const maxAgeMs = maxAgeDays * 86400000;
   const attempts = new Map();
 
-  const sign = (issuedAt) => createHmac('sha256', secret).update(String(issuedAt)).digest('hex');
+  const sign = (payload) => createHmac('sha256', secret).update(payload).digest('hex');
 
   return {
-    enabled: true,
+    /** True until the first account exists, which is what opens the setup form. */
+    get setupRequired() {
+      return accounts.empty;
+    },
+
+    /** The signed-in account for this request, or null. */
+    currentUser(req) {
+      const token = readCookie(req.headers.cookie, SESSION_COOKIE);
+      if (!token) return null;
+
+      const [userId, issuedAt, signature] = token.split('.');
+      if (!userId || !issuedAt || !signature) return null;
+
+      const age = now() - Number(issuedAt);
+      if (!Number.isFinite(age) || age < -60000 || age > maxAgeMs) return null;
+      if (!safeEqual(signature, sign(`${userId}.${issuedAt}`))) return null;
+
+      // A cookie outliving the account it names is not a session.
+      return accounts.find(userId);
+    },
 
     isAuthenticated(req) {
-      const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-      if (!token) return false;
-      const [issuedAt, signature] = token.split('.');
-      if (!issuedAt || !signature) return false;
-      const age = now() - Number(issuedAt);
-      if (!Number.isFinite(age) || age < -60000 || age > maxAgeMs) return false;
-      return safeEqual(signature, sign(issuedAt));
+      return Boolean(this.currentUser(req));
     },
 
     /**
-     * Checks a submitted passcode. Attempts are capped per client so a short
-     * numeric PIN cannot simply be guessed by a script.
+     * Checks an email and password. Attempts are capped per client so a weak
+     * password cannot simply be walked through by a script.
      */
-    attempt(candidate, clientId = 'unknown') {
+    async attempt({ email, password }, clientId = 'unknown') {
       const record = attempts.get(clientId);
       const at = now();
       if (record && at < record.resetAt && record.count >= MAX_ATTEMPTS) {
         return { ok: false, retryAfterSeconds: Math.ceil((record.resetAt - at) / 1000) };
       }
 
-      const supplied = typeof candidate === 'string' ? candidate.trim() : '';
-      if (supplied && safeEqual(hash(supplied), hash(passcode))) {
+      const user = await accounts.verify({ email, password });
+      if (user) {
         attempts.delete(clientId);
-        return { ok: true };
+        accounts.touch(user.id);
+        return { ok: true, user };
       }
 
-      const next = record && at < record.resetAt
-        ? { count: record.count + 1, resetAt: record.resetAt }
-        : { count: 1, resetAt: at + ATTEMPT_WINDOW_MS };
+      const next =
+        record && at < record.resetAt
+          ? { count: record.count + 1, resetAt: record.resetAt }
+          : { count: 1, resetAt: at + ATTEMPT_WINDOW_MS };
       attempts.set(clientId, next);
 
       if (next.count >= MAX_ATTEMPTS) {
@@ -85,9 +94,9 @@ export function createAuth({
       return { ok: false };
     },
 
-    cookie({ secure }) {
+    cookie(userId, { secure }) {
       const issuedAt = now();
-      const value = `${issuedAt}.${sign(issuedAt)}`;
+      const value = `${userId}.${issuedAt}.${sign(`${userId}.${issuedAt}`)}`;
       return serializeCookie(value, { maxAge: Math.floor(maxAgeMs / 1000), secure });
     },
 
@@ -119,13 +128,9 @@ export function readCookie(header, name) {
   return null;
 }
 
-function hash(value) {
-  return createHash('sha256').update(value).digest();
-}
-
 function safeEqual(a, b) {
-  const left = Buffer.isBuffer(a) ? a : Buffer.from(String(a));
-  const right = Buffer.isBuffer(b) ? b : Buffer.from(String(b));
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
 }

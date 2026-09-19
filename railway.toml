@@ -4,13 +4,11 @@
 # work here: the event stream that keeps the TV in sync stays open, and the
 # calendar is a file on an attached volume.
 #
-# Two things are set up in the dashboard rather than here, because Railway
-# does not take them from config:
-#   * a Volume mounted at /data  (Service → Settings → Volumes)
-#   * the HEARTH_PIN variable    (Service → Variables)
-#
-# Nothing else is needed: /data is found on its own once mounted, and a deploy
-# that finds it starts with your own family instead of the demo household.
+# One thing is set up in the dashboard rather than here, because Railway does
+# not take it from config: a Volume mounted at /data (Service → Settings →
+# Volumes). Nothing else is needed — /data is found on its own once mounted, a
+# deploy that finds it starts with your own family instead of the demo
+# household, and the first person to open the site creates the account.
 
 [build]
   builder = "NIXPACKS"

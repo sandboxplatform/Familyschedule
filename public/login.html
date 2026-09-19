@@ -54,10 +54,27 @@
       text-align: left;
     }
 
-    #pin {
-      text-align: center;
-      letter-spacing: 0.35em;
-      font-size: 1.25rem;
+    .field + .field {
+      margin-top: var(--space-4);
+    }
+
+    .hint {
+      margin-top: var(--space-2);
+      color: var(--text-faint);
+      font-size: 0.8rem;
+    }
+
+    .swap {
+      margin-top: var(--space-4);
+      color: var(--text-dim);
+      font-size: 0.86rem;
+    }
+
+    .swap button {
+      color: var(--accent);
+      font-weight: 650;
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
 
     .error {
@@ -81,24 +98,42 @@
   <main class="card">
     <img class="mark" src="/icons/hearth.svg" alt="" />
     <h1>Hearth</h1>
-    <p class="lede">Enter the household passcode to see the family calendar.</p>
+    <p class="lede" id="lede">Sign in to see the family calendar.</p>
 
     <form id="form" novalidate>
       <div class="field">
-        <label for="pin">Passcode</label>
+        <label for="email">Email</label>
         <input
-          type="password"
-          id="pin"
-          name="pin"
-          autocomplete="current-password"
-          inputmode="numeric"
+          type="email"
+          id="email"
+          name="email"
+          autocomplete="username"
+          autocapitalize="none"
+          spellcheck="false"
           required
           autofocus
         />
       </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          autocomplete="current-password"
+          required
+        />
+        <p class="hint" id="passwordHint" hidden>At least 8 characters.</p>
+      </div>
+      <div class="field" id="confirmField" hidden>
+        <label for="confirm">Confirm password</label>
+        <input type="password" id="confirm" name="confirm" autocomplete="new-password" />
+      </div>
       <button class="btn btn-primary btn-block" type="submit" id="submit">Sign in</button>
       <p class="error" id="error" role="alert"></p>
     </form>
+
+    <p class="swap" id="swap" hidden></p>
   </main>
 
   <script type="module" src="/js/login.js"></script>

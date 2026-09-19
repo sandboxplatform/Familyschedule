@@ -24,10 +24,12 @@ you're still on the call.
 
 ## Why it's built this way
 
-- **No accounts, no cloud, no subscription.** Everything lives on one machine on
-  your own network, in a single JSON file you can back up or copy.
+- **No cloud, no subscription.** Everything lives on one machine on your own
+  network, in a single SQLite file you can back up, copy or open with any
+  sqlite client.
 - **No build step and no dependencies.** `node server/index.js` is the entire
-  install. It runs happily on a Raspberry Pi, an old laptop or a NAS.
+  install — the database is node's own `node:sqlite`, so there is still nothing
+  to install. It runs happily on a Raspberry Pi, an old laptop or a NAS.
 - **Live, not polled.** Saves are pushed to every screen over server-sent
   events, so the TV updates while you're still holding the phone.
 - **Built for a screen you never touch.** The display view survives wifi
@@ -95,10 +97,11 @@ a standalone app — it is a proper web app manifest with icons, not a bookmark.
 | --- | --- | --- |
 | `PORT` | `4321` | Port to listen on |
 | `HOST` | unset | Interface to bind. Unset binds both IPv4 and IPv6 where available, so `localhost` resolves either way |
-| `HEARTH_DATA` | a mounted volume if one is found, else `./data/calendar.json` | Where the calendar is stored |
+| `HEARTH_DATA` | a mounted volume if one is found, else `./data/calendar.db` | Where the database lives |
 | `HEARTH_SEED` | on locally, off on a host with a volume | Set to `off` to start with an empty calendar, `on` to force the demo household |
-| `HEARTH_PIN` | unset | Household passcode. Unset means no sign-in (home network only) |
-| `HEARTH_SECRET` | unset | Optional extra entropy for session signing |
+
+Sign-in needs no configuration at all: accounts live in the database, and the
+session signing key is generated on first run and kept there too.
 
 Everything else — family name, theme, week start, starting view, 24-hour clock,
 view rotation and weather — is in the editor's Settings tab, so nobody has to
@@ -195,22 +198,31 @@ clamping, leap days, counts, exceptions, multi-day spans), the store
 (cookie flags, throttling, forged and expired sessions). No test framework to
 install — it's `node --test`.
 
+## Accounts
+
+The first person to open a new install is asked to create an account — an email
+and a password — and is signed in by the act of doing it. After that the same
+page is a sign-in, and further accounts are added from **Settings → Add another
+account** by somebody already signed in, so a public install cannot collect
+strangers.
+
+Nothing is readable without an account. The API answers `401` and pages
+redirect to `/login`; only the sign-in page, its assets and `/api/health` stay
+open. There is no anonymous mode to forget to turn off.
+
+Passwords are stored as salted scrypt hashes, never in the clear. Signing in
+sets a signed, `HttpOnly`, year-long cookie, so a screen on a wall is asked once
+and not again after a reboot; phones behave the same. A wrong password and an
+unknown email give the same answer, so the form cannot be used to find out who
+has an account, and guesses are throttled to 8 per client per 10 minutes.
+
+Signing in from a phone lands on the editor and from anything larger on the
+display, so nobody has to know which address to type.
+
 ## Going live
 
-On a home network Hearth needs no login, the same way a printer doesn't. The
-moment it is reachable from the internet that stops being true, so two things
-have to be true before you expose it:
+**Give it a real disk.** The database is a file. On a platform with an
 
-**1. Set a passcode.** `HEARTH_PIN=2468` turns on a shared household passcode.
-Everything is then closed until someone signs in — the API returns `401`, pages
-redirect to `/login`, and only the sign-in page, its assets and `/api/health`
-stay open. Signing in sets a signed, `HttpOnly`, year-long cookie, so the TV is
-asked once and never again; phones behave the same. Guesses are throttled to 8
-per client per 10 minutes, so a four-digit PIN can't be walked through by a
-script. Changing the passcode signs everybody out. There is a **Sign out of this
-device** button at the bottom of the editor's Settings tab.
-
-**2. Give it a real disk.** The calendar is a file. On a platform with an
 ephemeral filesystem it needs a mounted volume, or every deploy starts the
 family from scratch. Mount one at `/data`, `/var/hearth` or `/app/data` and Hearth
 finds it — on Railway, Fly or Render, which say so through their own
@@ -236,10 +248,10 @@ does not read them from config.
    it the calendar is wiped on every deploy. The image runs as an unprivileged
    user, so if the mount arrives owned by root the app says so and stops rather
    than failing later mid-write.
-3. **Service → Variables**: set `HEARTH_PIN` to your household passcode. That
-   is the only one required — a volume at `/data` is found on its own, and a
-   deploy that finds one starts with your own family rather than the demo
-   household. Set `HEARTH_DATA` or `HEARTH_SEED` only to override either.
+3. **Service → Variables**: nothing to set. A volume at `/data` is found on its
+   own, a deploy that finds one starts with your own family rather than the
+   demo household, and the first person to open the site creates the account.
+   Set `HEARTH_DATA` or `HEARTH_SEED` only to override either.
 
    If you deploy before adding the volume, the start-up log says so in as many
    words rather than quietly writing to a disk that is about to vanish.
@@ -264,21 +276,19 @@ inside that. Check their current pricing before you commit.
 ```bash
 fly launch --no-deploy --copy-config     # pick a name and a region
 fly volumes create hearth_data --size 1
-fly secrets set HEARTH_PIN=<passcode>
 fly deploy
 ```
 
 ### Render
 
 `render.yaml` is a working Blueprint if you'd rather use Render: **New →
-Blueprint**, point it at this repo, set `HEARTH_PIN` when prompted. It asks for
-a 1 GB disk, and since Render can't mount a disk on a free instance the
+Blueprint**, point it at this repo. It asks for a 1 GB disk, and since Render can't mount a disk on a free instance the
 blueprint specifies the `starter` plan.
 
 ### Your own box
 
 ```bash
-HEARTH_PIN=<passcode> docker compose up -d
+docker compose up -d
 ```
 
 Behind Caddy or nginx, proxy to `127.0.0.1:4321` and let the proxy hold the

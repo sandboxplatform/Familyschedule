@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url';
 
 import { createApp } from './app.js';
 import { Store } from './store.js';
+import { openDatabase } from './db.js';
+import { Accounts } from './accounts.js';
 import { seedState } from './seed.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -27,9 +29,19 @@ const port = Number(process.env.PORT || 4321);
  */
 const host = process.env.HOST || undefined;
 const volume = mountedVolume();
-const dataFile = process.env.HEARTH_DATA
+const dataDir = process.env.HEARTH_DATA
+  ? path.dirname(path.resolve(process.env.HEARTH_DATA))
+  : (volume ?? path.join(ROOT, 'data'));
+
+/*
+ * HEARTH_DATA used to name a JSON file and now names the database, so a value
+ * carried over from an older install still points at the right directory. The
+ * calendar.json beside it, if there is one, is imported on the first open.
+ */
+const dataFile = process.env.HEARTH_DATA && !process.env.HEARTH_DATA.endsWith('.json')
   ? path.resolve(process.env.HEARTH_DATA)
-  : path.join(volume ?? path.join(ROOT, 'data'), 'calendar.json');
+  : path.join(dataDir, 'calendar.db');
+const legacyFile = path.join(dataDir, 'calendar.json');
 
 /*
  * The demo household exists so a local evaluation is not a blank screen. A
@@ -43,24 +55,35 @@ const seeding = process.env.HEARTH_SEED
 
 assertWritable(dataFile);
 
-const store = new Store(dataFile);
-await store.load({ seed: seeding ? seedState : undefined });
+const db = openDatabase(dataFile);
+const store = new Store(db);
+const accounts = new Accounts(db);
+
+store.on('imported', ({ members, events }) => {
+  console.log(`  Imported ${events} events and ${members} people from ${legacyFile}`);
+});
+
+await store.load({ seed: seeding ? seedState : undefined, legacyFile });
 
 warnIfEphemeral();
 warnIfNoPages();
 
-const server = createApp(store);
+const server = createApp(store, { accounts });
 
 server.listen(port, host, () => {
   const lines = [
     '',
-    `  Hearth is running — data at ${dataFile}`,
+    `  Hearth is running — database at ${dataFile}`,
     '',
     `  TV display   http://localhost:${port}/`,
     `  Phone editor http://localhost:${port}/edit`,
   ];
   for (const address of lanAddresses()) {
     lines.push(`  On your network  http://${address}:${port}/  ·  /edit`);
+  }
+  if (accounts.empty) {
+    lines.push('');
+    lines.push('  No accounts yet — open the address above to create the first one.');
   }
   lines.push('');
   console.log(lines.join('\n'));

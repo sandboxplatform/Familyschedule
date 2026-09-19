@@ -1,5 +1,6 @@
 # Any box you own: a VPS, a NAS, the machine under the stairs.
-#   HEARTH_PIN=1234 docker compose up -d
+#   docker compose up -d
+# Then open it and create the household account.
 services:
   hearth:
     build: .
@@ -8,10 +9,6 @@ services:
     restart: unless-stopped
     ports:
       - '4321:4321'
-    environment:
-      # Leave empty on a trusted home network; set it for anything reachable
-      # from outside the house.
-      HEARTH_PIN: ${HEARTH_PIN:-}
     volumes:
       - hearth-data:/app/data
     healthcheck:

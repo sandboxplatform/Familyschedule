@@ -1,7 +1,8 @@
 # Render Blueprint — https://render.com/docs/blueprint-spec
 #
-# New > Blueprint in the Render dashboard, point it at this repo, and set
-# HEARTH_PIN when it asks. Everything else is below.
+# New > Blueprint in the Render dashboard and point it at this repo. The first
+# person to open the site creates the household account; there is nothing to
+# configure here for sign-in.
 #
 # Two things are deliberate and load-bearing:
 #   * the disk — the calendar is a JSON file, so without a mounted disk every
@@ -30,10 +31,6 @@ services:
       # land on sample data to click around.
       - key: HEARTH_SEED
         value: 'off'
-      # The household passcode. Marked sync:false so it is never committed —
-      # Render prompts for it when the blueprint is created.
-      - key: HEARTH_PIN
-        sync: false
     disk:
       name: hearth-data
       mountPath: /var/hearth

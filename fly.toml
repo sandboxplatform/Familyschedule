@@ -1,7 +1,6 @@
 # Fly.io deployment.
 #   fly launch --no-deploy --copy-config    (once, to pick a name and region)
 #   fly volumes create hearth_data --size 1
-#   fly secrets set HEARTH_PIN=<household passcode>
 #   fly deploy
 #
 # The calendar lives on the volume, so redeploys never wipe it.
