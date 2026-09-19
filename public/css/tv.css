@@ -46,10 +46,14 @@ body.show-cursor {
 
 .tv-date {
   margin-top: 0.2em;
-  font-size: 2.6rem;
+  /* Sized against the width it has to fit into, not just the root font: a
+     wrapped date costs a whole line of the calendar underneath it, which on a
+     short screen is a week of the month. */
+  font-size: clamp(1.5rem, 2.6vw, 2.6rem);
   font-weight: 650;
   letter-spacing: -0.02em;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .tv-now {
@@ -1037,6 +1041,8 @@ body.show-cursor {
   .tv-date {
     font-size: 1.45rem;
     line-height: 1.15;
+    /* A phone is narrow enough that wrapping beats overflowing. */
+    white-space: normal;
   }
 
   .tv-clock {

@@ -232,11 +232,24 @@ function addMonths(key, months) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-01`;
 }
 
-/** Weeks that fit, from the height a row needs to show about four entries. */
+/**
+ * Weeks that fit, from the height a row needs to show about four entries.
+ *
+ * Measured off the area the grid actually gets rather than guessed from the
+ * viewport: a header that wraps to two lines, which the date does at some
+ * widths, costs a row of the month, and an estimate cannot see that happen.
+ */
 function monthWeeks() {
-  const CHROME = 230; // header, weekday names, footer
-  const ROW = 104; // a date and roughly four entries
-  const available = (window.innerHeight || 0) - CHROME;
+  /* A date and about three entries. Four made the rows tall enough that a
+     720p panel lost a whole week to make room for capacity most days never
+     use; a day busier than three still says how many more it has. */
+  const ROW = 88;
+  const HEAD = 72; // the month's own heading and its weekday names
+
+  const measured = el.main?.clientHeight ?? 0;
+  // Before the first layout there is nothing to measure; the viewport, less
+  // what the surrounding chrome usually takes, is close enough for one frame.
+  const available = (measured > 0 ? measured : (window.innerHeight || 0) - 160) - HEAD;
   return Math.max(3, Math.min(6, Math.floor(available / ROW)));
 }
 
