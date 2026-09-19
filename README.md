@@ -233,7 +233,9 @@ does not read them from config.
 
 1. **New Project → Deploy from GitHub repo**, and pick this repository.
 2. **Service → Settings → Volumes**: add a volume mounted at `/data`. Without
-   it the calendar is wiped on every deploy.
+   it the calendar is wiped on every deploy. The image runs as an unprivileged
+   user, so if the mount arrives owned by root the app says so and stops rather
+   than failing later mid-write.
 3. **Service → Variables**: set `HEARTH_PIN` to your household passcode. That
    is the only one required — a volume at `/data` is found on its own, and a
    deploy that finds one starts with your own family rather than the demo

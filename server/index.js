@@ -41,6 +41,8 @@ const seeding = process.env.HEARTH_SEED
   ? process.env.HEARTH_SEED !== 'off'
   : !volume;
 
+assertWritable(dataFile);
+
 const store = new Store(dataFile);
 await store.load({ seed: seeding ? seedState : undefined });
 
@@ -63,6 +65,34 @@ server.listen(port, host, () => {
   lines.push('');
   console.log(lines.join('\n'));
 });
+
+/**
+ * Fail on the data directory before the store does, because the message
+ * matters: a volume is mounted owned by root, this image runs as an
+ * unprivileged user, and "EACCES: permission denied, open '/data/…'" three
+ * frames deep in a write does not say to go and change the mount.
+ */
+function assertWritable(file) {
+  const dir = path.dirname(file);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch (error) {
+    console.error(
+      [
+        '',
+        `  ✖  Cannot write the calendar to ${dir}`,
+        `     ${error.code === 'EACCES' ? 'Permission denied' : error.message}`,
+        '',
+        '     A mounted volume is usually owned by root, and this image runs as',
+        '     an unprivileged user. Give the mount to uid 1000 (the node user),',
+        '     or point HEARTH_DATA somewhere writable.',
+        '',
+      ].join('\n'),
+    );
+    process.exit(1);
+  }
+}
 
 /** The host we are deployed on, by its own environment marker, or null. */
 function platform() {

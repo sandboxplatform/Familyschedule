@@ -17,8 +17,13 @@ ENV PORT=4321
 # here instead would quietly ignore a volume mounted at /data, which is where
 # a host's dashboard puts one by default.
 ENV HEARTH_HOSTED=1
-VOLUME ["/app/data"]
 EXPOSE 4321
+
+# No VOLUME instruction on purpose. Railway rejects the build outright with
+# "docker VOLUME is not supported, use Railway Volumes", and it buys nothing
+# anywhere else: compose mounts hearth-data at /app/data explicitly, and hosts
+# mount their own. A bare `docker run` with no -v keeps the calendar inside the
+# container either way, which is what the start-up warning is there to say.
 
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD wget -qO- http://127.0.0.1:4321/api/health || exit 1
