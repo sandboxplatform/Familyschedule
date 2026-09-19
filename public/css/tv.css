@@ -370,13 +370,13 @@ body.show-cursor {
 
 /* -- week paging ----------------------------------------------------------- */
 
-.week-nav {
+.period-nav {
   display: flex;
   align-items: center;
   gap: var(--space-3);
 }
 
-.week-nav button {
+.period-nav button {
   display: grid;
   place-items: center;
   width: 2.1rem;
@@ -390,21 +390,21 @@ body.show-cursor {
   transition: color 0.2s var(--ease), background 0.2s var(--ease);
 }
 
-.week-nav button:hover,
-.week-nav button:focus-visible {
+.period-nav button:hover,
+.period-nav button:focus-visible {
   color: var(--text);
   background: var(--surface-strong);
 }
 
-.week-label {
+.period-label {
   min-width: 9rem;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
-/* Only there once you have wandered off this week. */
-.week-nav .week-today {
+/* Only there once you have wandered off from now. */
+.period-nav .period-now {
   width: auto;
   padding: 0 0.85rem;
   border-radius: var(--radius-pill);
@@ -822,8 +822,8 @@ body.show-cursor {
   min-height: 0;
 }
 
-.month-name {
-  font-size: 1.35rem;
+.month-head .period-label {
+  font-size: 1.2rem;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -988,7 +988,7 @@ body.show-cursor {
     grid-auto-rows: minmax(6rem, auto);
     overflow: hidden;
   }
-  .week-label {
+  .period-label {
     min-width: 0;
   }
   .tv-main[data-mode='day'] {
@@ -1099,7 +1099,7 @@ body.show-cursor {
     overflow: visible;
   }
 
-  .week-nav {
+  .period-nav {
     justify-content: center;
   }
 

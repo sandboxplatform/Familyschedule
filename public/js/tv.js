@@ -72,10 +72,6 @@ const el = {
   board: document.getElementById('board'),
   boardWrap: document.getElementById('boardWrap'),
   weekNav: document.getElementById('weekNav'),
-  weekLabel: document.getElementById('weekLabel'),
-  weekPrev: document.getElementById('weekPrev'),
-  weekNext: document.getElementById('weekNext'),
-  weekToday: document.getElementById('weekToday'),
   timeline: document.getElementById('timeline'),
   month: document.getElementById('month'),
   viewSwitch: document.getElementById('viewSwitch'),
@@ -92,9 +88,12 @@ const state = {
   days: [],
   today: todayKey(),
   mode: storedView() || 'agenda',
-  /* Weeks away from this one, for paging the week view. Never persisted: a
-     screen rebooting should come back to now, not to whenever it was left. */
+  /* Steps away from now, for paging the week and month views — weeks in one,
+     whatever the month view is currently showing in the other. Never
+     persisted: a screen rebooting comes back to now, not to wherever it was
+     left. */
   weekOffset: 0,
+  monthOffset: 0,
   lastMinute: -1,
 };
 
@@ -120,9 +119,6 @@ async function boot() {
     if (button) setMode(button.dataset.view);
   });
   el.themeToggle.addEventListener('click', toggleTheme);
-  el.weekPrev.addEventListener('click', () => stepWeek(-1));
-  el.weekNext.addEventListener('click', () => stepWeek(1));
-  el.weekToday.addEventListener('click', goToThisWeek);
 
   document.addEventListener('keydown', onKey);
   document.addEventListener('mousemove', showCursorBriefly);
@@ -185,6 +181,7 @@ function fetchRange() {
     const { first, weeks } = monthWindow();
     return { from: first, to: addDays(first, weeks * 7 - 1) };
   }
+
   if (state.mode === 'week') {
     // A week either side of the one on screen, so stepping is instant and the
     // live stream has something to redraw from before the next fetch lands.
@@ -210,16 +207,29 @@ function monthWindow() {
   const weekStart = state.settings?.weekStart ?? 1;
   const today = todayKey();
   const weeks = monthWeeks();
+  const offset = state.monthOffset ?? 0;
 
   if (weeks >= 6) {
-    // The whole month, laid out from the week its 1st falls in.
-    return { first: startOfWeekKey(startOfMonthKey(today), weekStart), weeks: 6, whole: true };
+    // The whole month, laid out from the week its 1st falls in. Stepping moves
+    // a month at a time, which is the thing on screen.
+    const anchor = addMonths(startOfMonthKey(today), offset);
+    return { first: startOfWeekKey(anchor, weekStart), weeks: 6, whole: true, anchor };
   }
 
+  // A window steps by its own length instead — a month at a time would skip
+  // most of what is never shown.
   const thisWeek = startOfWeekKey(today, weekStart);
-  // Slightly more ahead than behind: a calendar is mostly asked what is coming.
   const behind = Math.floor((weeks - 1) / 2);
-  return { first: addDays(thisWeek, -behind * 7), weeks, whole: false };
+  const first = addDays(thisWeek, (offset * weeks - behind) * 7);
+  return { first, weeks, whole: false, anchor: startOfMonthKey(today) };
+}
+
+/** The same day-of-month a number of months away, clamped to a real date. */
+function addMonths(key, months) {
+  const [y, m] = key.split('-').map(Number);
+  const date = new Date(y, m - 1 + months, 1);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-01`;
 }
 
 /** Weeks that fit, from the height a row needs to show about four entries. */
@@ -463,10 +473,50 @@ function renderWeekNav() {
   }
   const start = shownWeekStart();
   el.weekNav.hidden = false;
-  el.weekLabel.textContent = state.weekOffset === 0
-    ? 'This week'
-    : spanLabel(start, addDays(start, 6));
-  el.weekToday.hidden = state.weekOffset === 0;
+  el.weekNav.replaceChildren(
+    ...periodNav({
+      label: state.weekOffset === 0 ? 'This week' : spanLabel(start, addDays(start, 6)),
+      atNow: state.weekOffset === 0,
+      nowLabel: 'This week',
+      unit: 'week',
+      step: (by) => stepWeek(by),
+      now: goToThisWeek,
+    }),
+  );
+}
+
+/**
+ * The controls for stepping a view back and forward. Returning to now is only
+ * offered once you have left it, so the row stays quiet on the screen that is
+ * showing the right thing already.
+ */
+function periodNav({ label, atNow, nowLabel, unit, step, now }) {
+  const prev = document.createElement('button');
+  prev.type = 'button';
+  prev.textContent = '‹';
+  prev.setAttribute('aria-label', `Previous ${unit}`);
+  prev.addEventListener('click', () => step(-1));
+
+  const caption = document.createElement('p');
+  caption.className = 'period-label';
+  caption.textContent = label;
+
+  const next = document.createElement('button');
+  next.type = 'button';
+  next.textContent = '›';
+  next.setAttribute('aria-label', `Next ${unit}`);
+  next.addEventListener('click', () => step(1));
+
+  const parts = [prev, caption, next];
+  if (!atNow) {
+    const today = document.createElement('button');
+    today.type = 'button';
+    today.className = 'period-now';
+    today.textContent = nowLabel;
+    today.addEventListener('click', now);
+    parts.push(today);
+  }
+  return parts;
 }
 
 /** The Monday (or Sunday) of the week currently on screen. */
@@ -731,16 +781,22 @@ function assignLanes(items) {
 // -- month ----------------------------------------------------------------
 
 function renderMonth() {
-  const anchor = startOfMonthKey(state.today);
-  const { first, weeks, whole } = monthWindow();
+  const { first, weeks, whole, anchor } = monthWindow();
+  const atNow = (state.monthOffset ?? 0) === 0;
 
   const heading = document.createElement('div');
-  heading.className = 'month-head';
-  const caption = document.createElement('p');
-  caption.className = 'month-name';
-  // A window is not "September", so say which days are actually on screen.
-  caption.textContent = whole ? monthName(anchor) : spanLabel(first, addDays(first, weeks * 7 - 1));
-  heading.append(caption);
+  heading.className = 'month-head period-nav';
+  heading.append(
+    ...periodNav({
+      // A window is not "September", so it says which days are on screen.
+      label: whole ? monthName(anchor) : spanLabel(first, addDays(first, weeks * 7 - 1)),
+      atNow,
+      nowLabel: whole ? 'This month' : 'Today',
+      unit: whole ? 'month' : 'period',
+      step: (by) => stepMonth(by),
+      now: goToThisMonth,
+    }),
+  );
 
   const names = document.createElement('div');
   names.className = 'month-weekdays';
@@ -755,9 +811,12 @@ function renderMonth() {
   grid.style.setProperty('--weeks', String(weeks));
 
   const byDate = new Map(state.days.map((day) => [day.date, day]));
+  // Days outside the month being shown are dimmed; in a window, that is the
+  // month the middle of the window falls in.
+  const shownMonth = whole ? anchor : addDays(first, Math.floor((weeks * 7) / 2));
   for (let i = 0; i < weeks * 7; i += 1) {
     const date = addDays(first, i);
-    grid.append(monthCell(date, byDate.get(date), anchor));
+    grid.append(monthCell(date, byDate.get(date), shownMonth));
   }
 
   el.month.replaceChildren(heading, names, grid);
@@ -1023,10 +1082,9 @@ function setMode(mode, { persist = true } = {}) {
   const next = VIEWS.includes(mode) ? mode : 'agenda';
   const widened = needsWiderRange(next) && !needsWiderRange(state.mode);
 
-  if (next !== 'week' && state.weekOffset) {
-    state.weekOffset = 0;
-    clearTimeout(returnTimer);
-  }
+  if (next !== 'week' && state.weekOffset) state.weekOffset = 0;
+  if (next !== 'month' && state.monthOffset) state.monthOffset = 0;
+  if (next !== 'week' && next !== 'month') clearTimeout(returnTimer);
 
   state.mode = next;
   el.main.dataset.mode = next;
@@ -1070,6 +1128,20 @@ function stepWeek(by) {
   refresh();
 }
 
+function stepMonth(by) {
+  if (state.mode !== 'month') return;
+  state.monthOffset += by;
+  scheduleReturnToNow();
+  refresh();
+}
+
+function goToThisMonth() {
+  if (!state.monthOffset) return;
+  state.monthOffset = 0;
+  clearTimeout(returnTimer);
+  refresh();
+}
+
 function goToThisWeek() {
   if (!state.weekOffset) return;
   state.weekOffset = 0;
@@ -1079,8 +1151,11 @@ function goToThisWeek() {
 
 function scheduleReturnToNow() {
   clearTimeout(returnTimer);
-  if (!state.weekOffset) return;
-  returnTimer = setTimeout(goToThisWeek, RETURN_MS);
+  if (!state.weekOffset && !state.monthOffset) return;
+  returnTimer = setTimeout(() => {
+    goToThisWeek();
+    goToThisMonth();
+  }, RETURN_MS);
 }
 
 function cycleMode(step = 1, options) {
@@ -1148,15 +1223,24 @@ function shiftPixels() {
 // -- input -----------------------------------------------------------------
 
 function onKey(event) {
-  // Arrows page the week rather than scrolling, which there is nothing to do.
-  if (state.mode === 'week' && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
-    event.preventDefault();
-    stepWeek(event.key === 'ArrowLeft' ? -1 : 1);
-    return;
+  // Arrows page whichever view can be paged; there is nothing to scroll.
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    const by = event.key === 'ArrowLeft' ? -1 : 1;
+    if (state.mode === 'week') {
+      event.preventDefault();
+      stepWeek(by);
+      return;
+    }
+    if (state.mode === 'month') {
+      event.preventDefault();
+      stepMonth(by);
+      return;
+    }
   }
   if (event.key === 'Home') {
     event.preventDefault();
     goToThisWeek();
+    goToThisMonth();
     return;
   }
 
