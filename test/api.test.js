@@ -166,6 +166,51 @@ test('members and settings round-trip over HTTP', async () => {
   });
 });
 
+test('looking up a place returns somewhere to put the weather', async (t) => {
+  const { searchPlaces } = await import('../server/weather.js');
+
+  const stub = async () => ({
+    ok: true,
+    json: async () => ({
+      results: [
+        {
+          name: 'Leeds', admin1: 'England', country: 'United Kingdom',
+          country_code: 'GB', latitude: 53.79648, longitude: -1.54785,
+        },
+        {
+          name: 'Leeds', admin1: 'Alabama', country: 'United States',
+          country_code: 'US', latitude: 33.54815, longitude: -86.5486,
+        },
+      ],
+    }),
+  });
+
+  const found = await searchPlaces('Leeds', stub);
+  assert.equal(found.length, 2);
+  // Two places share the name, so the label has to say which is which.
+  assert.equal(found[0].label, 'Leeds, England, United Kingdom');
+  assert.equal(found[1].label, 'Leeds, Alabama, United States');
+  assert.equal(found[0].latitude, 53.7965);
+
+  // A search too short to mean anything never leaves the building.
+  let called = false;
+  await searchPlaces('L', async () => { called = true; });
+  assert.equal(called, false);
+
+  // Every way of failing is an empty list, never an error in someone's settings.
+  assert.deepEqual(await searchPlaces('x', async () => ({ ok: false })), []);
+  assert.deepEqual(await searchPlaces('x', async () => { throw new Error('offline'); }), []);
+  assert.deepEqual(await searchPlaces('x', async () => ({ ok: true, json: async () => ({}) })), []);
+});
+
+test('the place endpoint is behind the sign-in like everything else', async () => {
+  await withServer(async ({ anonymous, call }) => {
+    assert.equal((await anonymous('/api/places?q=Leeds')).status, 401);
+    // Signed in it answers, even where the lookup itself cannot be reached.
+    assert.equal((await call('/api/places?q=')).status, 200);
+  });
+});
+
 test('the stream pushes a frame when something changes', async () => {
   await withServer(async ({ base, store, cookie }) => {
     const controller = new AbortController();

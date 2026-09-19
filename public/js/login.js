@@ -137,7 +137,13 @@ form.addEventListener('submit', async (event) => {
 
     // Creating the first account signs you in; adding a second from inside
     // does not, so the person already signed in stays that way.
-    if (!creating || payload.signedIn) {
+    if (payload.signedIn) {
+      // A brand new household has nothing to look at yet — send them to set it
+      // up rather than to an empty calendar.
+      location.replace('/edit?setup=1');
+      return;
+    }
+    if (!creating) {
       location.replace(safeNext());
       return;
     }

@@ -28,6 +28,7 @@ export const api = {
   bootstrap: () => request('/api/bootstrap'),
   calendar: (from, to) => request(`/api/calendar?from=${from}&to=${to}`),
   weather: () => request('/api/weather'),
+  places: (query) => request(`/api/places?q=${encodeURIComponent(query)}`),
 
   listEvents: () => request('/api/events'),
   getEvent: (id) => request(`/api/events/${id}`),

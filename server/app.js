@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { addDays, isDateKey, rangeKeys, todayKey } from './dates.js';
 import { expandEvents, groupByDate } from './recurrence.js';
 import { CATEGORIES, PALETTE, ValidationError, NotFoundError } from './store.js';
-import { WeatherService } from './weather.js';
+import { WeatherService, searchPlaces } from './weather.js';
 import { clientId, createAuth, isSecureRequest } from './auth.js';
 import { Accounts } from './accounts.js';
 
@@ -224,6 +224,13 @@ async function handleApi(req, res, url, ctx) {
       sendJson(res, 200, { settings: store.updateSettings(body) });
       return;
     }
+  }
+
+  // Looking a place up by name, so nobody has to know their own coordinates.
+  if (segments[0] === 'places' && method === 'GET') {
+    const results = await searchPlaces(url.searchParams.get('q') || '');
+    sendJson(res, 200, { places: results });
+    return;
   }
 
   if (segments[0] === 'weather' && method === 'GET') {

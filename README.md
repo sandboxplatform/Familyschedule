@@ -217,7 +217,18 @@ unknown email give the same answer, so the form cannot be used to find out who
 has an account, and guesses are throttled to 8 per client per 10 minutes.
 
 Signing in from a phone lands on the editor and from anything larger on the
-display, so nobody has to know which address to type.
+display, so nobody has to know which address to type. The very first sign-in
+goes to Settings instead: a brand new household has an empty calendar, and the
+useful first move is naming the family and adding people, not staring at a
+blank week.
+
+### Weather
+
+Off until you turn it on, in **Settings → Weather**. Type a town and pick it
+from the list — it fills in the coordinates for you, and disambiguates the
+several places that share a name. Once saved it appears beside the clock on the
+display: what it is doing now, and the next three days. Forecasts come from
+Open-Meteo, which needs no account and no API key.
 
 ## Going live
 

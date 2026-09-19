@@ -651,3 +651,47 @@ select {
   font-weight: 650;
   text-decoration: none;
 }
+
+/* -- place search ---------------------------------------------------------- */
+
+.place-results {
+  margin-top: var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--surface-solid);
+  overflow: hidden;
+}
+
+.place-results li + li {
+  border-top: 1px solid var(--line);
+}
+
+.place-results button {
+  display: block;
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+  font-size: 0.92rem;
+}
+
+.place-results button:hover,
+.place-results button:focus-visible {
+  background: var(--surface-strong);
+}
+
+.place-results .empty {
+  padding: 0.7rem 0.9rem;
+  color: var(--text-faint);
+  font-size: 0.88rem;
+}
+
+.coords {
+  margin-top: var(--space-4);
+}
+
+.coords summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  font-weight: 650;
+}

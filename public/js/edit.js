@@ -84,6 +84,7 @@ async function boot() {
     const bootstrap = await api.bootstrap();
     applyBootstrap(bootstrap);
     await loadAgenda(todayKey());
+    openRequestedView();
   } catch (error) {
     toast(error.message, 'error');
   }
@@ -667,6 +668,79 @@ async function signOut() {
   }
 }
 
+/**
+ * Looks a place up by name and fills in the coordinates behind it. Debounced,
+ * because every keystroke would otherwise be a request, and guarded by a
+ * sequence number so a slow early search cannot overwrite a fast later one.
+ */
+let placeTimer = null;
+let placeSearchId = 0;
+
+function wirePlaceSearch() {
+  const input = $('placeSearch');
+  const results = $('placeResults');
+
+  const hide = () => {
+    results.hidden = true;
+    results.replaceChildren();
+  };
+
+  input.addEventListener('input', () => {
+    clearTimeout(placeTimer);
+    const query = input.value.trim();
+    if (query.length < 2) {
+      hide();
+      return;
+    }
+    placeTimer = setTimeout(() => runPlaceSearch(query, results, input), 350);
+  });
+
+  input.addEventListener('blur', () => {
+    // Let a click on a result land before the list disappears.
+    setTimeout(hide, 200);
+  });
+}
+
+async function runPlaceSearch(query, results, input) {
+  const id = ++placeSearchId;
+  let places = [];
+  try {
+    ({ places } = await api.places(query));
+  } catch {
+    // Treated as no matches — the hint below says what to do instead.
+  }
+  if (id !== placeSearchId) return;
+
+  results.hidden = false;
+  if (!places.length) {
+    const empty = document.createElement('li');
+    empty.className = 'empty';
+    empty.textContent = 'Nothing found — you can enter coordinates instead';
+    results.replaceChildren(empty);
+    return;
+  }
+
+  results.replaceChildren(
+    ...places.map((place) => {
+      const li = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = place.label;
+      button.addEventListener('click', () => {
+        $('latInput').value = String(place.latitude);
+        $('lonInput').value = String(place.longitude);
+        if (!$('weatherLabel').value.trim()) $('weatherLabel').value = place.name;
+        input.value = place.label;
+        results.hidden = true;
+        results.replaceChildren();
+        toast(`${place.name} — now save to show its weather`);
+      });
+      li.append(button);
+      return li;
+    }),
+  );
+}
+
 function useLocation() {
   if (!navigator.geolocation) {
     toast('This browser has no location support', 'error');
@@ -733,12 +807,35 @@ function wire() {
     $('weatherFields').hidden = !on;
   });
   $('useLocation').addEventListener('click', useLocation);
+  wirePlaceSearch();
   $('saveSettings').addEventListener('click', saveSettings);
   $('signOut').addEventListener('click', signOut);
 
   ui.jumpDate.addEventListener('change', () => {
     if (ui.jumpDate.value) loadAgenda(ui.jumpDate.value).catch((e) => toast(e.message, 'error'));
   });
+}
+
+/**
+ * A household that has just been created lands on Settings rather than an
+ * empty schedule: the first useful thing to do is say who is in the family and
+ * what the display should look like, not stare at a blank week.
+ */
+function openRequestedView() {
+  const params = new URLSearchParams(location.search);
+  const setup = params.has('setup');
+  const requested = params.get('tab');
+
+  if (!setup && !requested) return;
+  switchView(requested || 'settings');
+
+  if (setup) {
+    ui.viewSub.textContent = 'Start by naming your family';
+    toast('Welcome — set up your family here, then add people');
+  }
+
+  // Leave the address clean, so a reload is not another first run.
+  history.replaceState(null, '', location.pathname);
 }
 
 function switchView(name) {

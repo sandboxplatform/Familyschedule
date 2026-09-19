@@ -109,19 +109,35 @@
 
       <div id="weatherFields" hidden>
         <div class="field">
-          <label for="weatherLabel">Place name</label>
+          <label for="placeSearch">Where are you?</label>
+          <input
+            type="search"
+            id="placeSearch"
+            placeholder="Start typing a town or city"
+            autocomplete="off"
+            autocapitalize="words"
+          />
+          <ul class="place-results" id="placeResults" hidden></ul>
+        </div>
+
+        <div class="field">
+          <label for="weatherLabel">Shown on the TV as</label>
           <input type="text" id="weatherLabel" maxlength="40" placeholder="Home" />
         </div>
-        <div class="field-row">
-          <div class="field">
-            <label for="latInput">Latitude</label>
-            <input type="text" inputmode="decimal" id="latInput" placeholder="51.5072" />
+
+        <details class="coords">
+          <summary>Coordinates</summary>
+          <div class="field-row" style="margin-top: 0.75rem">
+            <div class="field">
+              <label for="latInput">Latitude</label>
+              <input type="text" inputmode="decimal" id="latInput" placeholder="51.5072" />
+            </div>
+            <div class="field">
+              <label for="lonInput">Longitude</label>
+              <input type="text" inputmode="decimal" id="lonInput" placeholder="-0.1276" />
+            </div>
           </div>
-          <div class="field">
-            <label for="lonInput">Longitude</label>
-            <input type="text" inputmode="decimal" id="lonInput" placeholder="-0.1276" />
-          </div>
-        </div>
+        </details>
         <div class="field">
           <label for="unitInput">Units</label>
           <select id="unitInput">

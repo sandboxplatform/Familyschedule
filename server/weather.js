@@ -7,6 +7,7 @@
  */
 
 const ENDPOINT = 'https://api.open-meteo.com/v1/forecast';
+const GEOCODING = 'https://geocoding-api.open-meteo.com/v1/search';
 const CACHE_MS = 15 * 60 * 1000;
 const TIMEOUT_MS = 6000;
 
@@ -27,6 +28,48 @@ export function describeCode(code) {
     if (codes.includes(code)) return { icon, label };
   }
   return { icon: 'cloudy', label: 'Unsettled' };
+}
+
+/**
+ * Turns "Leeds" into coordinates.
+ *
+ * Nobody knows their own latitude, and the browser's own location needs HTTPS
+ * and a permission prompt — neither of which a television is going to give
+ * you. Open-Meteo's geocoder is part of the same keyless service as the
+ * forecast, so this costs nothing extra.
+ */
+export async function searchPlaces(query, fetchImpl = globalThis.fetch) {
+  const name = typeof query === 'string' ? query.trim() : '';
+  if (name.length < 2) return [];
+
+  const url = new URL(GEOCODING);
+  url.searchParams.set('name', name);
+  url.searchParams.set('count', '6');
+  url.searchParams.set('language', 'en');
+  url.searchParams.set('format', 'json');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetchImpl(url, { signal: controller.signal });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return (payload.results || []).map((place) => ({
+      name: place.name,
+      // "Leeds, West Yorkshire, United Kingdom" — enough to tell apart the
+      // several places that share a name.
+      label: [place.name, place.admin1, place.country].filter(Boolean).join(', '),
+      latitude: Number(place.latitude.toFixed(4)),
+      longitude: Number(place.longitude.toFixed(4)),
+      country: place.country_code || '',
+    }));
+  } catch {
+    // A search that cannot reach the internet is an empty search, not an error
+    // page in the middle of someone's settings.
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export class WeatherService {
