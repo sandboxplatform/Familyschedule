@@ -52,7 +52,7 @@ function setMode(signUp) {
       ? 'There are no accounts on this calendar yet — create the first one to get in.'
       : 'Sign in to see the family calendar.';
 
-  document.title = signUp ? 'Hearth — Create account' : 'Hearth — Sign in';
+  document.title = signUp ? 'Family Schedule — Create account' : 'Family Schedule — Sign in';
   submit.textContent = signUp ? 'Create account' : 'Sign in';
   confirmField.hidden = !signUp;
   passwordHint.hidden = !signUp;

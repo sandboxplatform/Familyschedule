@@ -70,7 +70,20 @@ await store.load({ seed: seeding ? seedState : undefined, legacyFile });
 warnIfEphemeral();
 warnIfNoPages();
 
-const server = createApp(store, { accounts });
+/*
+ * Whether what gets written here will still be here after the next deploy. A
+ * checkout on somebody's own disk always will; a hosted one only if a volume
+ * was mounted. The app carries this so the answer can be shown to whoever is
+ * about to type their family into it, rather than only appearing in a log
+ * nobody reads twice.
+ */
+const storage = {
+  persistent: Boolean(volume) || !platform(),
+  platform: platform(),
+  path: dataFile,
+};
+
+const server = createApp(store, { accounts, storage });
 
 server.listen(port, host, () => {
   const lines = [

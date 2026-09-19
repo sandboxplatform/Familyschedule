@@ -97,13 +97,14 @@ async function boot() {
   });
 }
 
-function applyBootstrap({ settings, members, categories, palette, user }) {
+function applyBootstrap({ settings, members, categories, palette, user, storage }) {
   state.settings = settings;
   state.members = members;
   state.memberMap = new Map(members.map((m) => [m.id, m]));
   state.categories = categories;
   state.palette = palette;
   state.user = user || null;
+  showStorageWarning(storage);
   ui.root.dataset.theme = settings.theme;
   $('signOut').hidden = false;
   $('signedInAs').textContent = state.user ? state.user.email : '';
@@ -821,6 +822,31 @@ function wire() {
  * empty schedule: the first useful thing to do is say who is in the family and
  * what the display should look like, not stare at a blank week.
  */
+/**
+ * A hosted deploy with no volume writes into its own container, so the next
+ * deploy takes the household with it. The log says so at start-up; this says so
+ * to the person it happens to.
+ */
+function showStorageWarning(storage) {
+  const banner = $('storageWarning');
+  if (!storage || storage.persistent) {
+    banner.hidden = true;
+    return;
+  }
+
+  const where = storage.platform || 'this host';
+  $('storageWarningBody').replaceChildren(
+    document.createTextNode(
+      `${where} is running Hearth without a persistent volume, so the calendar `
+        + 'is being written inside the container. Accounts, people and events '
+        + 'are all lost the next time it deploys. Mount a volume at ',
+    ),
+    Object.assign(document.createElement('code'), { textContent: '/data' }),
+    document.createTextNode(' and it will be found automatically.'),
+  );
+  banner.hidden = false;
+}
+
 function openRequestedView() {
   const params = new URLSearchParams(location.search);
   const setup = params.has('setup');

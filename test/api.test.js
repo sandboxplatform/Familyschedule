@@ -166,6 +166,49 @@ test('members and settings round-trip over HTTP', async () => {
   });
 });
 
+test('bootstrap says whether the data will outlive the next deploy', async () => {
+  await withServer(async ({ call }) => {
+    // The harness runs a plain checkout, where the disk is the user's own.
+    assert.equal((await call('/api/bootstrap')).body.storage.persistent, true);
+  });
+});
+
+test('a host with no volume is reported as impermanent', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'hearth-vol-'));
+  const { Store } = await import('../server/store.js');
+  const { openDatabase } = await import('../server/db.js');
+  const { Accounts } = await import('../server/accounts.js');
+
+  const db = openDatabase(path.join(dir, 'calendar.db'));
+  const store = new Store(db);
+  await store.load();
+  const accounts = new Accounts(db);
+  const server = createApp(store, {
+    weather: { get: async () => null },
+    accounts,
+    storage: { persistent: false, platform: 'Railway', path: '/app/data/calendar.db' },
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const created = await fetch(`${base}/api/account`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', password: 'a-good-password' }),
+    });
+    const cookie = created.headers.get('set-cookie').split(';')[0];
+    const boot = await (await fetch(`${base}/api/bootstrap`, { headers: { Cookie: cookie } })).json();
+
+    assert.equal(boot.storage.persistent, false);
+    assert.equal(boot.storage.platform, 'Railway');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await store.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('looking up a place returns somewhere to put the weather', async (t) => {
   const { searchPlaces } = await import('../server/weather.js');
 
@@ -240,14 +283,17 @@ test('the stream pushes a frame when something changes', async () => {
 });
 
 test('static files are served and traversal is refused', async () => {
-  await withServer(async ({ call, base }) => {
-    const page = await fetch(`${base}/`);
+  await withServer(async ({ call, base, cookie }) => {
+    // Signed in, or this only ever reaches the sign-in page — which is what it
+    // used to do, while asserting it had the display.
+    const page = await fetch(`${base}/`, { headers: { Cookie: cookie } });
     assert.equal(page.status, 200);
     assert.match(page.headers.get('content-type'), /text\/html/);
-    assert.match(await page.text(), /Hearth/);
+    assert.match(await page.text(), /id="tv"/);
 
-    const editor = await fetch(`${base}/edit`);
+    const editor = await fetch(`${base}/edit`, { headers: { Cookie: cookie } });
     assert.equal(editor.status, 200);
+    assert.match(await editor.text(), /id="fab"/);
 
     const escaped = await fetch(`${base}/../package.json`, { redirect: 'manual' });
     assert.notEqual(escaped.status, 200);

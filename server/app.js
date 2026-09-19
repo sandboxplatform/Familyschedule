@@ -42,6 +42,7 @@ export function createApp(store, {
   publicDir = PUBLIC_DIR,
   accounts = new Accounts(store.db),
   auth = createAuth({ db: store.db, accounts }),
+  storage = { persistent: true, platform: null, path: null },
 } = {}) {
   const clients = new Set();
 
@@ -55,7 +56,7 @@ export function createApp(store, {
         return;
       }
       if (url.pathname.startsWith('/api/')) {
-        await handleApi(req, res, url, { store, weather, clients, auth, accounts });
+        await handleApi(req, res, url, { store, weather, clients, auth, accounts, storage });
         return;
       }
       await serveStatic(req, res, url, publicDir);
@@ -105,7 +106,7 @@ function denyUnauthenticated(req, res, url, auth) {
 }
 
 async function handleApi(req, res, url, ctx) {
-  const { store, weather, clients, auth, accounts } = ctx;
+  const { store, weather, clients, auth, accounts, storage } = ctx;
   const route = url.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '');
   const segments = route ? route.split('/') : [];
   const method = req.method.toUpperCase();
@@ -125,6 +126,7 @@ async function handleApi(req, res, url, ctx) {
       categories: CATEGORIES,
       palette: PALETTE,
       user: me ? { id: me.id, email: me.email } : null,
+      storage,
       today: todayKey(),
       serverTime: new Date().toISOString(),
     });
