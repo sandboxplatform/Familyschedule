@@ -52,9 +52,9 @@ Then open:
 - `http://<machine>:4321/` — the TV display
 - `http://<machine>:4321/edit` — the phone editor
 
-The first run seeds a demo household so the screen isn't blank; delete the
-sample entries from the phone once you've had a look, or start clean with
-`HEARTH_SEED=off npm start`.
+A new calendar starts empty — you add your own family and your own week. For a
+look around with something already in it, start once with `HEARTH_SEED=on npm
+start`.
 
 ### Put it on the TV
 
@@ -98,7 +98,7 @@ a standalone app — it is a proper web app manifest with icons, not a bookmark.
 | `PORT` | `4321` | Port to listen on |
 | `HOST` | unset | Interface to bind. Unset binds both IPv4 and IPv6 where available, so `localhost` resolves either way |
 | `HEARTH_DATA` | a mounted volume if one is found, else `./data/calendar.db` | Where the database lives |
-| `HEARTH_SEED` | on locally, off on a host with a volume | Set to `off` to start with an empty calendar, `on` to force the demo household |
+| `HEARTH_SEED` | off | Set to `on` to fill a new calendar with a demo household for a look around |
 
 Sign-in needs no configuration at all: accounts live in the database, and the
 session signing key is generated on first run and kept there too.
@@ -260,9 +260,8 @@ does not read them from config.
    user, so if the mount arrives owned by root the app says so and stops rather
    than failing later mid-write.
 3. **Service → Variables**: nothing to set. A volume at `/data` is found on its
-   own, a deploy that finds one starts with your own family rather than the
-   demo household, and the first person to open the site creates the account.
-   Set `HEARTH_DATA` or `HEARTH_SEED` only to override either.
+   own and the first person to open the site creates the account. Set
+   `HEARTH_DATA` only to put the database somewhere else.
 
    If you deploy before adding the volume, the start-up log says so in as many
    words rather than quietly writing to a disk that is about to vanish.

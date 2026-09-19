@@ -191,7 +191,11 @@ function renderToday() {
   el.todayList.replaceChildren(
     ...(items.length
       ? items.map((item) => todayRow(item, minutes))
-      : [emptyState('A clear day', 'Nothing scheduled — enjoy it.')]),
+      : [blankInstall()
+          // "Enjoy it" is the wrong note for a calendar nobody has filled in
+          // yet: the day is not clear, the household simply has not started.
+          ? emptyState('Nothing here yet', `Add your family and your first plans at ${location.host}/edit`)
+          : emptyState('A clear day', 'Nothing scheduled — enjoy it.')]),
   );
 
   renderSpotlight(items, minutes);
@@ -774,6 +778,11 @@ function emptyState(big, text) {
   }
   wrap.append(document.createTextNode(text));
   return wrap;
+}
+
+/** True on a calendar that has never had anybody or anything put in it. */
+function blankInstall() {
+  return !state.members.length && state.days.every((day) => !day.items.length);
 }
 
 function renderLegend() {

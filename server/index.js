@@ -44,14 +44,16 @@ const dataFile = process.env.HEARTH_DATA && !process.env.HEARTH_DATA.endsWith('.
 const legacyFile = path.join(dataDir, 'calendar.json');
 
 /*
- * The demo household exists so a local evaluation is not a blank screen. A
- * real deploy wants its own family, not nine invented events to delete from a
- * phone — and a mounted volume is what tells the two apart. HEARTH_SEED still
- * decides it outright either way.
+ * Every install starts empty. A household sets up its own people and its own
+ * week, and the invented family that used to be here was nine events and four
+ * strangers to delete from a phone before the calendar was yours.
+ *
+ * The demo is still there behind HEARTH_SEED=on, for looking at the thing with
+ * something in it, and is opt-in precisely because the previous rule — seed
+ * unless a volume is mounted — turned it back on for exactly the deploy that
+ * least wanted it.
  */
-const seeding = process.env.HEARTH_SEED
-  ? process.env.HEARTH_SEED !== 'off'
-  : !volume;
+const seeding = process.env.HEARTH_SEED === 'on';
 
 assertWritable(dataFile);
 
