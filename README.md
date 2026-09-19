@@ -95,8 +95,8 @@ a standalone app — it is a proper web app manifest with icons, not a bookmark.
 | --- | --- | --- |
 | `PORT` | `4321` | Port to listen on |
 | `HOST` | unset | Interface to bind. Unset binds both IPv4 and IPv6 where available, so `localhost` resolves either way |
-| `HEARTH_DATA` | `./data/calendar.json` | Where the calendar is stored |
-| `HEARTH_SEED` | on | Set to `off` to start with an empty calendar |
+| `HEARTH_DATA` | a mounted volume if one is found, else `./data/calendar.json` | Where the calendar is stored |
+| `HEARTH_SEED` | on locally, off on a host with a volume | Set to `off` to start with an empty calendar, `on` to force the demo household |
 | `HEARTH_PIN` | unset | Household passcode. Unset means no sign-in (home network only) |
 | `HEARTH_SECRET` | unset | Optional extra entropy for session signing |
 
@@ -211,8 +211,11 @@ script. Changing the passcode signs everybody out. There is a **Sign out of this
 device** button at the bottom of the editor's Settings tab.
 
 **2. Give it a real disk.** The calendar is a file. On a platform with an
-ephemeral filesystem it must be pointed at a mounted volume with `HEARTH_DATA`,
-or every deploy starts the family from scratch.
+ephemeral filesystem it needs a mounted volume, or every deploy starts the
+family from scratch. Mount one at `/data` and Hearth finds it — on Railway, Fly
+or Render, which say so through their own environment. Anywhere else, point
+`HEARTH_DATA` at it. A hosted deploy running without one says so loudly in its
+start-up log.
 
 TLS is expected to be terminated by the platform or your reverse proxy; when it
 is, the session cookie is automatically marked `Secure` (Hearth reads
@@ -229,13 +232,13 @@ does not read them from config.
 1. **New Project → Deploy from GitHub repo**, and pick this repository.
 2. **Service → Settings → Volumes**: add a volume mounted at `/data`. Without
    it the calendar is wiped on every deploy.
-3. **Service → Variables**:
+3. **Service → Variables**: set `HEARTH_PIN` to your household passcode. That
+   is the only one required — a volume at `/data` is found on its own, and a
+   deploy that finds one starts with your own family rather than the demo
+   household. Set `HEARTH_DATA` or `HEARTH_SEED` only to override either.
 
-   | Variable | Value |
-   | --- | --- |
-   | `HEARTH_DATA` | `/data/calendar.json` |
-   | `HEARTH_PIN` | your household passcode |
-   | `HEARTH_SEED` | `off` — start with your own family, not the demo one |
+   If you deploy before adding the volume, the start-up log says so in as many
+   words rather than quietly writing to a disk that is about to vanish.
 
 4. **Settings → Networking → Generate Domain** for an HTTPS URL, or point a
    custom domain at it. Railway terminates TLS and sets `X-Forwarded-Proto`, so

@@ -8,6 +8,9 @@
 # does not take them from config:
 #   * a Volume mounted at /data  (Service → Settings → Volumes)
 #   * the HEARTH_PIN variable    (Service → Variables)
+#
+# Nothing else is needed: /data is found on its own once mounted, and a deploy
+# that finds it starts with your own family instead of the demo household.
 
 [build]
   builder = "NIXPACKS"
