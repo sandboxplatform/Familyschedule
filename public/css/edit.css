@@ -16,7 +16,9 @@ body {
 .shell {
   max-width: 44rem;
   margin: 0 auto;
-  padding: 0 var(--space-4);
+  /* Clears the fixed tab bar, so whatever sits last in a panel — the save
+     button at the foot of Settings — can still be reached and tapped. */
+  padding: 0 var(--space-4) calc(5.5rem + env(safe-area-inset-bottom));
 }
 
 /* -- app bar -------------------------------------------------------------- */

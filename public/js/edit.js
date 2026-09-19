@@ -616,6 +616,7 @@ function fillSettings() {
   $('familyNameInput').value = s.familyName;
   $('themeInput').value = s.theme;
   $('weekStartInput').value = String(s.weekStart);
+  $('defaultViewInput').value = s.defaultView;
   $('rotateInput').value = String(s.rotateSeconds);
   setToggle($('clockToggle'), s.clock24h);
   setToggle($('weatherToggle'), s.weather.enabled);
@@ -633,6 +634,7 @@ async function saveSettings() {
     familyName: $('familyNameInput').value,
     theme: $('themeInput').value,
     weekStart: Number($('weekStartInput').value),
+    defaultView: $('defaultViewInput').value,
     clock24h: $('clockToggle').getAttribute('aria-pressed') === 'true',
     rotateSeconds: Number($('rotateInput').value),
     weather: {

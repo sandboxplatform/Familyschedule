@@ -1,11 +1,12 @@
 /* ==========================================================================
-   TV display — designed for a 10-foot read on a 1080p/4K browser window.
-   The root font size scales with the viewport so the same layout works on a
-   32" kitchen screen and a 65" living-room TV without a single media query.
+   The display view — a normal fullscreen browser window, on a desk or on a
+   screen in the kitchen, and the same layout down to a phone. The root font
+   grows a little with the viewport so a large monitor is not all whitespace,
+   but stays in ordinary reading range rather than TV-sized.
    ========================================================================== */
 
 html {
-  font-size: clamp(14px, 0.78vw + 0.35vh, 28px);
+  font-size: clamp(13px, 0.42vw + 0.32vh, 17px);
 }
 
 body {
@@ -133,12 +134,20 @@ body.show-cursor {
   min-height: 0;
 }
 
-.tv-main[data-mode='week'] {
+.tv-main[data-mode='week'],
+.tv-main[data-mode='month'] {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.tv-main[data-mode='week'] .today-panel {
+.tv-main[data-mode='week'] .today-panel,
+.tv-main[data-mode='month'] .today-panel {
   display: none;
+}
+
+/* Day keeps the today panel beside the rail — the panel answers "what now?"
+   and the rail answers "how full is the rest of it?". */
+.tv-main[data-mode='day'] {
+  grid-template-columns: minmax(20rem, 0.82fr) minmax(0, 2fr);
 }
 
 /* -- today panel ---------------------------------------------------------- */
@@ -503,15 +512,38 @@ body.show-cursor {
   color: var(--text-dim);
 }
 
-.tv-hint {
+.tv-edit {
   display: inline-flex;
   align-items: center;
-  gap: 0.6em;
+  gap: 0.55em;
+  padding: 0.4rem 0.95rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 
-.tv-hint strong {
+.tv-edit:hover,
+.tv-edit:focus-visible {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-color: var(--accent);
+}
+
+.tv-edit .plus {
+  font-size: 1.05em;
+  line-height: 1;
+}
+
+/* The address stays visible because the usual way in is typing it into a phone
+   that is not the screen you are looking at. */
+.tv-edit small {
   color: var(--text-dim);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .status {
@@ -540,6 +572,348 @@ body.show-cursor {
   content: 'Live';
 }
 
+
+/* -- day timeline --------------------------------------------------------- */
+
+.timeline {
+  display: grid;
+  min-height: 0;
+}
+
+.timeline-inner {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+.all-day-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.all-day-strip .card {
+  flex: 0 1 auto;
+  min-width: 10rem;
+}
+
+.rail {
+  position: relative;
+  min-height: 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+/* Inset from the rail's edges so the first and last hour labels, which sit
+   half a line above their gridline, are not clipped by the rounded corners. */
+.rail-track {
+  position: absolute;
+  inset: 1.1rem 0.6rem 1.1rem 0;
+}
+
+.rail-hour {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--at) * 100%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-top: 1px solid var(--line);
+  pointer-events: none;
+}
+
+.rail-hour span {
+  width: 4.5rem;
+  padding-left: var(--space-4);
+  margin-top: -0.75em;
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+
+/* The current time reads as a bright hairline across the whole rail. */
+.rail-now {
+  position: absolute;
+  left: 4.5rem;
+  right: 0;
+  top: calc(var(--at) * 100%);
+  height: 2px;
+  background: var(--danger);
+  box-shadow: 0 0 1.5rem color-mix(in srgb, var(--danger) 55%, transparent);
+  z-index: 3;
+}
+
+.rail-now::before {
+  content: '';
+  position: absolute;
+  left: -0.3rem;
+  top: -0.28rem;
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.rail-block {
+  position: absolute;
+  top: calc(var(--from) * 100%);
+  height: calc((var(--to) - var(--from)) * 100%);
+  min-height: 2.9rem;
+  left: calc(4.5rem + (100% - 4.5rem) * (var(--lane) / var(--lanes)));
+  width: calc((100% - 4.5rem) / var(--lanes) - 0.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  overflow: hidden;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--tint);
+  background: color-mix(in srgb, var(--tint) 16%, var(--surface-solid));
+  z-index: 2;
+}
+
+.rail-block .time {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--text-dim);
+}
+
+.rail-block .name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+/* Short entries drop their detail lines and put the time beside the title
+   rather than above it, which buys two lines back in a block only a couple of
+   rem tall. is-tight goes one further and keeps the title alone. Only while
+   the rail is a rail — the phone layout stacks blocks and has room for all of
+   it, and the classes may linger from a wider window. */
+@media (min-width: 681px) {
+  .rail-block.is-compact .sub,
+  .rail-block.is-compact .who {
+    display: none;
+  }
+
+  .rail-block.is-tight .time {
+    display: none;
+  }
+}
+
+.rail-block.is-compact {
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.rail-block.is-compact .time {
+  flex: none;
+}
+
+.rail-block.is-compact .name {
+  font-size: 0.95rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rail-block .sub {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.rail-block.is-now {
+  border-color: var(--tint);
+  box-shadow: 0 0 0 1px var(--tint), 0 0.75rem 2rem color-mix(in srgb, var(--tint) 30%, transparent);
+}
+
+.rail-block.is-past {
+  opacity: 0.45;
+}
+
+.timeline .empty {
+  position: absolute;
+  inset: 0 0 0 4.5rem;
+  pointer-events: none;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-2);
+  color: var(--text-faint);
+  z-index: 1;
+}
+
+.timeline .empty .big {
+  font-size: 2rem;
+  font-weight: 300;
+  color: var(--text-dim);
+}
+
+/* -- month ---------------------------------------------------------------- */
+
+.month {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.month-name {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.month-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.month-weekdays span {
+  padding-left: var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  gap: var(--space-2);
+  min-height: 0;
+}
+
+.month-cell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.2rem;
+  min-height: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.month-cell .num {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.month-cell.is-weekend {
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+
+.month-cell.is-outside {
+  opacity: 0.38;
+}
+
+.month-cell.is-past .month-items {
+  opacity: 0.55;
+}
+
+.month-cell.is-today {
+  background: var(--surface-strong);
+  border-color: var(--accent);
+  box-shadow: var(--today-glow);
+}
+
+.month-cell.is-today .num {
+  color: var(--accent);
+}
+
+.month-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.month-pill {
+  display: block;
+  overflow: hidden;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--tint);
+  background: color-mix(in srgb, var(--tint) 18%, var(--surface-solid));
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.month-pill small {
+  margin-right: 0.3em;
+  color: var(--text-dim);
+  font-weight: 650;
+}
+
+.month-items .more {
+  padding-left: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 650;
+  color: var(--text-faint);
+}
+
+/* -- view switcher -------------------------------------------------------- */
+
+.view-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.2rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.view-switch button {
+  padding: 0.3rem 0.85rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.view-switch button:hover {
+  color: var(--text);
+}
+
+.view-switch button[aria-pressed='true'] {
+  color: var(--text);
+  background: var(--surface-strong);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+
+.view-switch .theme-toggle {
+  margin-left: 0.2rem;
+  padding: 0.3rem 0.6rem;
+  border-left: 1px solid var(--line);
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  font-size: 0.95rem;
+}
+
 /* Enter animation keeps refreshes from feeling like a page flash. */
 .fade-in {
   animation: fade-in 0.45s var(--ease) both;
@@ -560,5 +934,238 @@ body.show-cursor {
     grid-auto-flow: row;
     grid-auto-rows: minmax(6rem, auto);
     overflow: hidden;
+  }
+  .tv-main[data-mode='day'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .month-pill small {
+    display: none;
+  }
+}
+
+/* -- phones ---------------------------------------------------------------
+   Below this the screen is held, not glanced at across a room: the page
+   scrolls, the cursor comes back, and the panels stack in reading order.
+   -------------------------------------------------------------------------- */
+@media (max-width: 680px) {
+  html {
+    font-size: 15px;
+  }
+
+  body {
+    overflow: auto;
+    cursor: auto;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .tv {
+    height: auto;
+    min-height: 100dvh;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-4) var(--space-5);
+    /* Burn-in nudging is a screen-left-on behaviour; it only jitters a phone. */
+    transform: none;
+  }
+
+  .tv-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+
+  .tv-now {
+    flex-direction: row;
+    align-items: baseline;
+  }
+
+  .tv-date {
+    font-size: 1.45rem;
+    line-height: 1.15;
+  }
+
+  .tv-clock {
+    font-size: 1.9rem;
+  }
+
+  .tv-weather {
+    display: none;
+  }
+
+  /* Panels size to their content and the page scrolls, rather than each one
+     fighting for a slice of a viewport that is never tall enough. */
+  .tv-main,
+  .tv-main[data-mode='day'] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    gap: var(--space-4);
+  }
+
+  .today-panel {
+    padding: var(--space-4);
+  }
+
+  /* The panel grows with its content and the page scrolls, so nothing is
+     trimmed away behind a fade. */
+  .today-list,
+  .day-items,
+  .month-items {
+    flex: none;
+    overflow: visible;
+    mask-image: none;
+  }
+
+  /* Day on a phone is the today panel — the rail needs width it has not got,
+     and showing both stacks the same events twice. */
+  .tv-main[data-mode='day'] .timeline {
+    display: none;
+  }
+
+  .tv-main[data-mode='day'] .today-panel {
+    display: flex;
+  }
+
+  /* Month sizes to its rows instead of stretching to fill a viewport the page
+     no longer has to fit into. */
+  .month {
+    grid-template-rows: auto auto auto;
+  }
+
+  .month-grid {
+    grid-template-rows: repeat(6, minmax(2.8rem, auto));
+  }
+
+  .board {
+    grid-auto-rows: auto;
+    overflow: visible;
+  }
+
+  .day-col {
+    padding: var(--space-3);
+  }
+
+  /* A 16-hour rail cannot work at this width; the day becomes a plain list. */
+  .rail {
+    height: auto;
+    padding: var(--space-2);
+  }
+
+  .rail-track {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .rail-hour,
+  .rail-now {
+    display: none;
+  }
+
+  .rail-block,
+  .rail-block.is-compact {
+    position: static;
+    height: auto;
+    min-height: 0;
+    width: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.15em;
+    padding: var(--space-3);
+  }
+
+  .rail-block.is-compact .name {
+    white-space: normal;
+    font-size: 1.05rem;
+  }
+
+  .timeline .empty {
+    position: static;
+    padding: var(--space-6) 0;
+  }
+
+  .all-day-strip {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* Month keeps its grid — it is the one view whose shape is the point — but
+     drops to date numbers with a dot per entry. */
+  .month-grid {
+    gap: 0.2rem;
+  }
+
+  .month-cell {
+    padding: 0.3rem 0.25rem;
+  }
+
+  .month-weekdays {
+    gap: 0.2rem;
+  }
+
+  .month-weekdays span {
+    padding-left: 0.25rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+  }
+
+  .month-items {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.15rem;
+    align-content: flex-start;
+  }
+
+  .month-pill {
+    width: 0.45rem;
+    height: 0.45rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--tint);
+    font-size: 0;
+    overflow: hidden;
+  }
+
+  .month-items .more {
+    font-size: 0.6rem;
+  }
+
+  .tv-footer {
+    position: sticky;
+    bottom: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-3);
+    margin: 0 calc(-1 * var(--space-4));
+    padding: var(--space-3) var(--space-4);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line);
+  }
+
+  .legend {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .view-switch {
+    order: 1;
+  }
+
+  .view-switch button {
+    padding: 0.35rem 0.7rem;
+  }
+
+  .tv-edit {
+    order: 2;
+    padding: 0.45rem 0.9rem;
+  }
+
+  .tv-edit small {
+    display: none;
+  }
+
+  .status {
+    display: none;
   }
 }

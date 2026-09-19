@@ -135,16 +135,24 @@ test('settings are clamped to sane values', () => {
     familyName: '   ',
     weekStart: 7,
     theme: 'neon',
+    defaultView: 'hologram',
     rotateSeconds: 9999,
     weather: { enabled: true, latitude: 300, longitude: -200, unit: 'kelvin' },
   });
   assert.equal(settings.familyName, 'Our Family');
   assert.equal(settings.weekStart, 1);
   assert.equal(settings.theme, 'midnight');
+  assert.equal(settings.defaultView, 'agenda');
   assert.equal(settings.rotateSeconds, 600);
   assert.equal(settings.weather.latitude, 90);
   assert.equal(settings.weather.longitude, -180);
   assert.equal(settings.weather.unit, 'celsius');
+});
+
+test('every display view is accepted as the default', () => {
+  for (const view of ['agenda', 'day', 'week', 'month']) {
+    assert.equal(validateSettings({ defaultView: view }).defaultView, view);
+  }
 });
 
 test('migration keeps good rows and drops broken ones', () => {

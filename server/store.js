@@ -56,6 +56,7 @@ export function defaultSettings() {
     familyName: 'Our Family',
     weekStart: 1,
     theme: 'midnight',
+    defaultView: 'agenda',
     clock24h: false,
     rotateSeconds: 0,
     weather: { enabled: false, latitude: null, longitude: null, unit: 'celsius', label: '' },
@@ -375,6 +376,9 @@ export function validateSettings(input) {
     familyName: text(input?.familyName, 'familyName', { max: 40 }) || base.familyName,
     weekStart: input?.weekStart === 0 ? 0 : 1,
     theme: ['midnight', 'daylight'].includes(input?.theme) ? input.theme : base.theme,
+    defaultView: ['agenda', 'day', 'week', 'month'].includes(input?.defaultView)
+      ? input.defaultView
+      : base.defaultView,
     clock24h: Boolean(input?.clock24h),
     rotateSeconds: clampNumber(input?.rotateSeconds, 0, 0, 600),
     weather: {

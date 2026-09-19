@@ -15,7 +15,11 @@ import {
   formatTime,
   longDate,
   minutesOf,
+  monthName,
   nowMinutes,
+  sameMonth,
+  startOfMonthKey,
+  startOfWeekKey,
   todayKey,
   untilLabel,
   weekdayIndex,
@@ -37,6 +41,17 @@ const REFRESH_MS = 5 * 60 * 1000;
 const WEATHER_MS = 15 * 60 * 1000;
 const BURN_IN_MS = 8 * 60 * 1000;
 const AGENDA_DAYS = 6;
+const VIEWS = ['agenda', 'day', 'week', 'month'];
+const VIEW_KEY = 'hearth.view';
+
+/* The day timeline sizes its rail to the day actually on screen. A fixed
+   6am-10pm window gives about 28px an hour on a 720p panel, which is too thin
+   to read an entry's title from the sofa, so the rail narrows to the hours in
+   use (padded by one either side) and never goes below MIN_RAIL_HOURS. */
+const RAIL_FALLBACK = { start: 8, end: 20 };
+const MIN_RAIL_HOURS = 6;
+
+let rail = { ...RAIL_FALLBACK };
 
 const el = {
   root: document.documentElement,
@@ -55,6 +70,11 @@ const el = {
   todayList: document.getElementById('todayList'),
   whoNext: document.getElementById('whoNext'),
   board: document.getElementById('board'),
+  timeline: document.getElementById('timeline'),
+  month: document.getElementById('month'),
+  viewSwitch: document.getElementById('viewSwitch'),
+  themeToggle: document.getElementById('themeToggle'),
+  themeGlyph: document.getElementById('themeGlyph'),
   legend: document.getElementById('legend'),
   editUrl: document.getElementById('editUrl'),
   status: document.getElementById('status'),
@@ -65,7 +85,7 @@ const state = {
   members: new Map(),
   days: [],
   today: todayKey(),
-  mode: 'agenda',
+  mode: storedView() || 'agenda',
   lastMinute: -1,
 };
 
@@ -86,6 +106,12 @@ async function boot() {
   setInterval(shiftPixels, BURN_IN_MS);
   tick();
 
+  el.viewSwitch.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-view]');
+    if (button) setMode(button.dataset.view);
+  });
+  el.themeToggle.addEventListener('click', toggleTheme);
+
   document.addEventListener('keydown', onKey);
   document.addEventListener('mousemove', showCursorBriefly);
 }
@@ -98,21 +124,22 @@ function scheduleRefresh(delay) {
 
 async function refresh() {
   try {
-    const today = todayKey();
-    const from = startOfWeekKey(today, state.settings?.weekStart ?? 1);
-    const payload = await api.calendar(from, addDays(from, 20));
+    const { from, to } = fetchRange();
+    const payload = await api.calendar(from, to);
 
     state.settings = payload.settings;
     state.today = payload.today;
     state.members = new Map(payload.members.map((member) => [member.id, member]));
     state.days = payload.days;
 
-    el.root.dataset.theme = payload.settings.theme;
+    applyTheme(payload.settings.theme);
     el.familyName.textContent = payload.settings.familyName;
     el.todayLong.textContent = longDate(payload.today);
 
     renderLegend();
-    render();
+    // A screen that has been given a view of its own keeps it; anything else
+    // follows whatever the household set in the editor.
+    setMode(storedView() || payload.settings.defaultView, { persist: false });
     el.status.setAttribute('data-state', 'live');
     loadWeather();
   } catch {
@@ -121,8 +148,33 @@ async function refresh() {
 }
 
 function render() {
+  if (state.mode === 'month') {
+    renderMonth();
+    return;
+  }
+  if (state.mode === 'day') {
+    renderToday();
+    renderTimeline();
+    return;
+  }
   renderToday();
   renderBoard();
+}
+
+/**
+ * The window of days to ask the server for. Month needs the whole grid — which
+ * starts before the 1st and runs past the 31st — so the range has to follow the
+ * mode rather than being a fixed slice from today.
+ */
+function fetchRange() {
+  const today = todayKey();
+  const weekStart = state.settings?.weekStart ?? 1;
+  if (state.mode === 'month') {
+    const from = startOfWeekKey(startOfMonthKey(today), weekStart);
+    return { from, to: addDays(from, 41) };
+  }
+  const from = startOfWeekKey(today, weekStart);
+  return { from, to: addDays(from, 20) };
 }
 
 // -- today ----------------------------------------------------------------
@@ -399,6 +451,292 @@ function miniCard(item) {
   return card;
 }
 
+// -- day timeline ---------------------------------------------------------
+
+/**
+ * One day, hour by hour. Timed entries sit on a rail against the clock so a
+ * glance tells you how much of the day is already spoken for; all-day items
+ * ride above it because they have no place on a time axis.
+ */
+function renderTimeline() {
+  const day = state.days.find((d) => d.date === state.today);
+  const items = day ? day.items : [];
+  const allDay = items.filter((item) => item.allDay || !item.startTime);
+  const timed = items.filter((item) => !allDay.includes(item));
+
+  rail = railWindow(timed);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'timeline-inner';
+
+  if (allDay.length) {
+    const strip = document.createElement('div');
+    strip.className = 'all-day-strip';
+    const label = document.createElement('p');
+    label.className = 'eyebrow';
+    label.textContent = 'All day';
+    strip.append(label, ...allDay.map(miniCard));
+    wrap.append(strip);
+  }
+
+  const railEl = document.createElement('div');
+  railEl.className = 'rail';
+
+  // Hour lines and blocks live in a track inset from the rail's edges, so the
+  // first and last labels have room to sit against instead of being clipped.
+  const track = document.createElement('div');
+  track.className = 'rail-track';
+
+  for (let hour = rail.start; hour <= rail.end; hour += 1) {
+    const line = document.createElement('div');
+    line.className = 'rail-hour';
+    line.style.setProperty('--at', String(railFraction(hour * 60)));
+    const tag = document.createElement('span');
+    tag.textContent = formatTime(`${String(hour).padStart(2, '0')}:00`, state.settings.clock24h);
+    line.append(tag);
+    track.append(line);
+  }
+
+  // Lanes keep overlapping entries side by side instead of stacked on top of
+  // each other — a 4pm and a 4:30pm would otherwise be unreadable.
+  for (const [lane, item] of assignLanes(timed)) {
+    track.append(timelineBlock(item, lane.index, lane.count));
+  }
+
+  // Only mark "now" when the clock is actually on the rail — clamping it would
+  // park the line at 6am through the small hours and read as the wrong time.
+  const minutes = nowMinutes();
+  if (isToday(state.today) && minutes >= rail.start * 60 && minutes <= rail.end * 60) {
+    const now = document.createElement('div');
+    now.className = 'rail-now';
+    now.style.setProperty('--at', String(railFraction(minutes)));
+    track.append(now);
+  }
+
+  // An empty day keeps its rail rather than collapsing to a line of text — the
+  // shape of the screen should not change just because nothing is on.
+  if (!timed.length) {
+    track.append(emptyBlock('A clear day', 'Nothing scheduled — enjoy it.'));
+  }
+
+  railEl.append(track);
+  wrap.append(railEl);
+  el.timeline.replaceChildren(wrap);
+  requestAnimationFrame(() => fitBlocks(track));
+}
+
+/**
+ * A short entry cannot show everything. How short is a pixel question, not a
+ * minutes one — the rail's scale changes with the day and the TV scales its own
+ * root font — so each block is measured once laid out and shed a line at a time
+ * until it fits. Half a clipped line reads as a rendering fault.
+ */
+function fitBlocks(track) {
+  for (const block of track.querySelectorAll('.rail-block')) {
+    if (!overflowing(block)) continue;
+    block.classList.add('is-compact');
+    if (overflowing(block)) block.classList.add('is-tight');
+  }
+}
+
+function overflowing(block) {
+  const style = getComputedStyle(block);
+  const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  const content = [...block.children]
+    .filter((child) => getComputedStyle(child).display !== 'none')
+    .reduce((total, child) => total + child.getBoundingClientRect().height, 0);
+  return content + padding > block.getBoundingClientRect().height + 1;
+}
+
+/**
+ * The hours the rail should span: the day's own range padded by an hour each
+ * side, widened to MIN_RAIL_HOURS so a single lunch date does not become a
+ * whole screen of one event.
+ */
+function railWindow(timed) {
+  if (!timed.length) return { ...RAIL_FALLBACK };
+
+  const starts = timed.map((item) => minutesOf(item.startTime));
+  const ends = timed.map((item) => minutesOf(item.endTime) ?? minutesOf(item.startTime) + 60);
+  let start = Math.max(0, Math.floor(Math.min(...starts) / 60) - 1);
+  let end = Math.min(24, Math.ceil(Math.max(...ends) / 60) + 1);
+
+  // Grow evenly around the middle until the window is wide enough to read.
+  while (end - start < MIN_RAIL_HOURS && (start > 0 || end < 24)) {
+    if (start > 0) start -= 1;
+    if (end - start < MIN_RAIL_HOURS && end < 24) end += 1;
+  }
+  return { start, end };
+}
+
+/** Where a minute-of-day sits on the rail, clamped to its ends. */
+function railFraction(minutes) {
+  const from = rail.start * 60;
+  const to = rail.end * 60;
+  return Math.min(1, Math.max(0, (minutes - from) / (to - from)));
+}
+
+function timelineBlock(item, lane, lanes) {
+  const start = minutesOf(item.startTime);
+  const end = minutesOf(item.endTime) ?? start + 60;
+
+  const block = document.createElement('article');
+  block.className = 'rail-block fade-in';
+  block.style.setProperty('--tint', tintFor(item));
+  block.style.setProperty('--from', String(railFraction(start)));
+  block.style.setProperty('--to', String(railFraction(Math.max(end, start + 20))));
+  block.style.setProperty('--lane', String(lane));
+  block.style.setProperty('--lanes', String(lanes));
+
+  const minutes = nowMinutes();
+  if (isToday(state.today)) {
+    if (start <= minutes && minutes < end) block.classList.add('is-now');
+    else if (end <= minutes) block.classList.add('is-past');
+  }
+
+  const when = document.createElement('p');
+  when.className = 'time';
+  when.textContent = formatRange(item.startTime, item.endTime, state.settings.clock24h);
+
+  const title = document.createElement('p');
+  title.className = 'name';
+  title.textContent = item.title;
+
+  block.append(when, title);
+
+  const meta = categoryMeta(item.category);
+  const bits = [];
+  if (item.category !== 'general') bits.push(`${meta.glyph} ${meta.label}`);
+  if (item.location) bits.push(`📍 ${item.location}`);
+  if (bits.length) {
+    const sub = document.createElement('p');
+    sub.className = 'sub';
+    sub.textContent = bits.join('  ·  ');
+    block.append(sub);
+  }
+  const people = peopleTags(item, 'who');
+  if (people) block.append(people);
+  return block;
+}
+
+/**
+ * Greedy lane packing: an entry takes the first lane whose last entry has
+ * already finished. Returns each item with the lane it landed in and how many
+ * lanes its overlapping cluster needs.
+ */
+function assignLanes(items) {
+  const sorted = [...items].sort((a, b) => minutesOf(a.startTime) - minutesOf(b.startTime));
+  const lanes = [];
+  const placed = [];
+
+  for (const item of sorted) {
+    const start = minutesOf(item.startTime);
+    const end = minutesOf(item.endTime) ?? start + 60;
+    let index = lanes.findIndex((busyUntil) => busyUntil <= start);
+    if (index === -1) {
+      index = lanes.length;
+      lanes.push(end);
+    } else {
+      lanes[index] = end;
+    }
+    placed.push({ item, index, start, end });
+  }
+
+  // Width is decided per cluster of mutually overlapping entries, so a lone
+  // morning entry stays full width even if the evening is busy.
+  return placed.map((entry) => {
+    const cluster = placed.filter((other) => other.start < entry.end && entry.start < other.end);
+    const count = Math.max(...cluster.map((other) => other.index + 1));
+    return [{ index: entry.index, count }, entry.item];
+  });
+}
+
+// -- month ----------------------------------------------------------------
+
+function renderMonth() {
+  const weekStart = state.settings.weekStart ?? 1;
+  const anchor = startOfMonthKey(state.today);
+  const first = startOfWeekKey(anchor, weekStart);
+
+  const heading = document.createElement('div');
+  heading.className = 'month-head';
+  const caption = document.createElement('p');
+  caption.className = 'month-name';
+  caption.textContent = monthName(anchor);
+  heading.append(caption);
+
+  const names = document.createElement('div');
+  names.className = 'month-weekdays';
+  for (let i = 0; i < 7; i += 1) {
+    const cell = document.createElement('span');
+    cell.textContent = dayName(addDays(first, i), 'short');
+    names.append(cell);
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'month-grid';
+
+  // Six rows always, so the grid does not jump height between months.
+  const byDate = new Map(state.days.map((day) => [day.date, day]));
+  for (let i = 0; i < 42; i += 1) {
+    const date = addDays(first, i);
+    grid.append(monthCell(date, byDate.get(date), anchor));
+  }
+
+  el.month.replaceChildren(heading, names, grid);
+  requestAnimationFrame(() => {
+    for (const list of el.month.querySelectorAll('.month-items')) trimOverflow(list);
+  });
+}
+
+function monthCell(date, day, anchor) {
+  const cell = document.createElement('div');
+  cell.className = 'month-cell';
+  if (!sameMonth(date, anchor)) cell.classList.add('is-outside');
+  if (date === state.today) cell.classList.add('is-today');
+  else if (date < state.today) cell.classList.add('is-past');
+  const weekday = weekdayIndex(date);
+  if (weekday === 0 || weekday === 6) cell.classList.add('is-weekend');
+
+  const num = document.createElement('span');
+  num.className = 'num';
+  num.textContent = String(Number(date.slice(8)));
+  cell.append(num);
+
+  const list = document.createElement('div');
+  list.className = 'month-items';
+  for (const item of day?.items || []) list.append(monthPill(item));
+  cell.append(list);
+  return cell;
+}
+
+function monthPill(item) {
+  const pill = document.createElement('span');
+  pill.className = 'month-pill';
+  pill.style.setProperty('--tint', tintFor(item));
+  if (!item.allDay && item.startTime) {
+    const time = document.createElement('small');
+    time.textContent = formatTime(item.startTime, state.settings.clock24h);
+    pill.append(time);
+  }
+  pill.append(document.createTextNode(item.title));
+  return pill;
+}
+
+function emptyBlock(big, text) {
+  const wrap = document.createElement('div');
+  wrap.className = 'empty';
+  const strong = document.createElement('span');
+  strong.className = 'big';
+  strong.textContent = big;
+  wrap.append(strong, document.createTextNode(text));
+  return wrap;
+}
+
+function isToday(key) {
+  return key === todayKey();
+}
+
 // -- shared bits ----------------------------------------------------------
 
 function peopleTags(item, className = 'people') {
@@ -460,6 +798,11 @@ function trimOverflow(list) {
   if (existing) existing.remove();
   const items = [...list.children];
   for (const item of items) item.hidden = false;
+
+  // Where the list is free to grow — a phone, where the page scrolls instead —
+  // it hugs its content, and the last item would otherwise always measure as
+  // sitting on the boundary and be trimmed away.
+  if (list.scrollHeight <= list.clientHeight + 1) return;
 
   const bounds = list.getBoundingClientRect();
   const overflowing = items.filter((item) => item.getBoundingClientRect().bottom > bounds.bottom - 2);
@@ -566,13 +909,93 @@ function rotateIfDue(now) {
   if (!seconds) return;
   if (now.getTime() - lastRotate < seconds * 1000) return;
   lastRotate = now.getTime();
-  setMode(state.mode === 'agenda' ? 'week' : 'agenda');
+  // Rotation is a display behaviour, not a choice worth remembering.
+  cycleMode(1, { persist: false });
 }
 
-function setMode(mode) {
-  state.mode = mode;
-  el.main.dataset.mode = mode;
-  renderBoard();
+function setMode(mode, { persist = true } = {}) {
+  const next = VIEWS.includes(mode) ? mode : 'agenda';
+  const widened = needsWiderRange(next) && !needsWiderRange(state.mode);
+
+  state.mode = next;
+  el.main.dataset.mode = next;
+
+  el.board.hidden = next === 'day' || next === 'month';
+  el.timeline.hidden = next !== 'day';
+  el.month.hidden = next !== 'month';
+
+  for (const button of el.viewSwitch.querySelectorAll('[data-view]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.view === next));
+  }
+
+  if (persist) rememberView(next);
+
+  // Month reaches further back and forward than the other views, so it needs a
+  // fresh fetch before it can draw anything.
+  if (widened) {
+    refresh();
+    return;
+  }
+  render();
+}
+
+function needsWiderRange(mode) {
+  return mode === 'month';
+}
+
+function cycleMode(step = 1, options) {
+  const index = VIEWS.indexOf(state.mode);
+  setMode(VIEWS[(index + step + VIEWS.length) % VIEWS.length], options);
+}
+
+function storedView() {
+  try {
+    const value = localStorage.getItem(VIEW_KEY);
+    return VIEWS.includes(value) ? value : null;
+  } catch {
+    // A TV browser in private mode still deserves a working calendar.
+    return null;
+  }
+}
+
+function rememberView(mode) {
+  try {
+    localStorage.setItem(VIEW_KEY, mode);
+  } catch {
+    // Not worth surfacing — the view simply resets on the next reload.
+  }
+}
+
+// -- theme -----------------------------------------------------------------
+
+function applyTheme(theme) {
+  el.root.dataset.theme = theme;
+  el.themeGlyph.textContent = theme === 'daylight' ? '☀' : '☾';
+  el.themeToggle.setAttribute(
+    'title',
+    theme === 'daylight' ? 'Switch to dark' : 'Switch to light',
+  );
+}
+
+/**
+ * The toggle writes through to settings rather than staying local, so the phone
+ * and every other screen in the house follow the same theme over the live
+ * stream. The switch is applied immediately and rolled back if the save fails.
+ */
+async function toggleTheme() {
+  if (!state.settings) return;
+  const previous = state.settings.theme;
+  const next = previous === 'daylight' ? 'midnight' : 'daylight';
+
+  state.settings.theme = next;
+  applyTheme(next);
+
+  try {
+    await api.updateSettings({ ...state.settings, theme: next });
+  } catch {
+    state.settings.theme = previous;
+    applyTheme(previous);
+  }
 }
 
 function shiftPixels() {
@@ -582,17 +1005,27 @@ function shiftPixels() {
   el.tv.style.setProperty('--burn-y', `${y}px`);
 }
 
-function startOfWeekKey(key, weekStart = 1) {
-  const offset = (weekdayIndex(key) - weekStart + 7) % 7;
-  return addDays(key, -offset);
-}
-
 // -- input -----------------------------------------------------------------
 
 function onKey(event) {
   switch (event.key.toLowerCase()) {
     case 'v':
-      setMode(state.mode === 'agenda' ? 'week' : 'agenda');
+      cycleMode(event.shiftKey ? -1 : 1);
+      break;
+    case 'l':
+      toggleTheme();
+      break;
+    case 'd':
+      setMode('day');
+      break;
+    case 'w':
+      setMode('week');
+      break;
+    case 'm':
+      setMode('month');
+      break;
+    case 'a':
+      setMode('agenda');
       break;
     case 'f':
       if (document.fullscreenElement) document.exitFullscreen();

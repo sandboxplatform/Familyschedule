@@ -139,10 +139,11 @@ test('members and settings round-trip over HTTP', async () => {
 
     const settings = await call('/api/settings', {
       method: 'PATCH',
-      body: { familyName: 'The Riveras', theme: 'daylight', clock24h: true },
+      body: { familyName: 'The Riveras', theme: 'daylight', defaultView: 'month', clock24h: true },
     });
     assert.equal(settings.body.settings.familyName, 'The Riveras');
     assert.equal(settings.body.settings.theme, 'daylight');
+    assert.equal(settings.body.settings.defaultView, 'month');
     assert.equal(settings.body.settings.clock24h, true);
   });
 });

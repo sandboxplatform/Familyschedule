@@ -42,6 +42,22 @@ export function weekdayIndex(key) {
   return parseKey(key).getDay();
 }
 
+export function startOfWeekKey(key, weekStart = 1) {
+  return addDays(key, -((weekdayIndex(key) - weekStart + 7) % 7));
+}
+
+export function startOfMonthKey(key) {
+  return `${key.slice(0, 7)}-01`;
+}
+
+export function sameMonth(a, b) {
+  return a.slice(0, 7) === b.slice(0, 7);
+}
+
+export function monthName(key, style = 'long') {
+  return parseKey(key).toLocaleDateString(undefined, { month: style, year: 'numeric' });
+}
+
 export function formatTime(time, clock24h = false) {
   if (!time) return '';
   const [h, m] = time.split(':').map(Number);

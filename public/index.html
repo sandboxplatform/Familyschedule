@@ -40,11 +40,28 @@
       </section>
 
       <section class="board" id="board" aria-label="Upcoming days"></section>
+      <section class="timeline" id="timeline" aria-label="Today hour by hour" hidden></section>
+      <section class="month" id="month" aria-label="This month" hidden></section>
     </main>
 
     <footer class="tv-footer">
       <ul class="legend" id="legend"></ul>
-      <p class="tv-hint">Add or change plans at <strong id="editUrl">/edit</strong></p>
+
+      <div class="view-switch" id="viewSwitch" role="group" aria-label="Calendar view">
+        <button type="button" data-view="day">Day</button>
+        <button type="button" data-view="week">Week</button>
+        <button type="button" data-view="month">Month</button>
+        <button type="button" data-view="agenda">Agenda</button>
+        <button type="button" class="theme-toggle" id="themeToggle" aria-label="Switch between light and dark">
+          <span class="glyph" id="themeGlyph">☾</span>
+        </button>
+      </div>
+
+      <a class="tv-edit" href="/edit">
+        <span class="plus" aria-hidden="true">＋</span>
+        Add or change plans
+        <small id="editUrl">/edit</small>
+      </a>
       <span class="status" id="status" data-state="live">
         <span class="dot"></span><span class="label"></span>
       </span>

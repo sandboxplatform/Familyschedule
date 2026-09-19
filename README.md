@@ -18,9 +18,9 @@ you're still on the call.
 | TV display (`/`) | Phone editor (`/edit`) |
 | --- | --- |
 | Today's agenda, what's happening now, what's next | Add, edit and delete in a couple of taps |
-| Six days ahead, or a full-week board | Repeat rules without the iCal jargon |
+| Four views: day, week, month or agenda | Repeat rules without the iCal jargon |
 | Per-person colours and a "next up" line for everyone | Colour-code the household |
-| Optional weather, live clock, two themes | Installs to the home screen as an app |
+| Optional weather, live clock, light and dark | Installs to the home screen as an app |
 
 ## Why it's built this way
 
@@ -30,9 +30,12 @@ you're still on the call.
   install. It runs happily on a Raspberry Pi, an old laptop or a NAS.
 - **Live, not polled.** Saves are pushed to every screen over server-sent
   events, so the TV updates while you're still holding the phone.
-- **Built for a screen you never touch.** The TV view survives wifi dropouts,
-  rolls over at midnight, trims busy days to fit, and drifts a few pixels every
-  eight minutes so a static layout can't ghost the panel.
+- **Built for a screen you never touch.** The display view survives wifi
+  dropouts, rolls over at midnight, trims busy days to fit, and drifts a few
+  pixels every eight minutes so a static layout can't ghost the panel.
+- **One layout, every screen.** The same page works fullscreen on a monitor and
+  scrolled on a phone — the day rail becomes a list, the month keeps its grid
+  with a dot per entry, and the controls move to a bar at the bottom.
 
 ## Quick start
 
@@ -61,9 +64,25 @@ chromium-browser --kiosk --noerrdialogs --disable-infobars \
   --incognito http://hearth.local:4321/
 ```
 
-Press `F` for fullscreen, `V` to switch between the agenda and the week board,
-`R` to force a refresh, and `E` to jump to the editor. The mouse cursor fades
+### The four views
+
+A bar at the bottom of the display switches between them, and so do the keys:
+
+| View | Key | What it shows |
+| --- | --- | --- |
+| **Day** | `D` | Today hour by hour, on a rail against the clock, with a line at the current time. Overlapping entries sit side by side. The rail fits itself to the hours actually in use. |
+| **Week** | `W` | The current week, Monday to Sunday, side by side |
+| **Month** | `M` | The whole month, today picked out, with a `+N more` marker on busy days |
+| **Agenda** | `A` | Today's panel plus the next six days — the default |
+
+`V` cycles the views (`Shift`+`V` goes back), `L` switches between light and
+dark, `F` toggles fullscreen, `R` forces a refresh and `E` opens the editor —
+as does the **Add or change plans** button in the bar. The mouse cursor fades
 out on its own.
+
+Whichever view you pick is remembered by that screen, so the TV in the kitchen
+and the tablet in the hall can each sit on a different one. A screen that has
+never been given a view follows **Display opens on** in the editor's Settings.
 
 ### Put it on a phone
 
@@ -81,8 +100,9 @@ a standalone app — it is a proper web app manifest with icons, not a bookmark.
 | `HEARTH_PIN` | unset | Household passcode. Unset means no sign-in (home network only) |
 | `HEARTH_SECRET` | unset | Optional extra entropy for session signing |
 
-Everything else — family name, theme, week start, 24-hour clock, view rotation
-and weather — is in the editor's Settings tab, so nobody has to edit a config
+Everything else — family name, theme, week start, starting view, 24-hour clock,
+view rotation and weather — is in the editor's Settings tab, so nobody has to
+edit a config
 file to change how the TV looks.
 
 Weather is off by default. Turn it on, drop in coordinates (or tap "use my
