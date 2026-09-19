@@ -18,6 +18,12 @@ import { seedState } from './seed.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
+const VOLUME_CANDIDATES = [
+  { path: '/data', ownedByImage: false },
+  { path: '/var/hearth', ownedByImage: false },
+  { path: '/app/data', ownedByImage: true },
+];
+
 /* Filesystems that are the machine talking to itself rather than somewhere to
    keep a calendar: kernel interfaces, memory-backed, or read-only images. */
 const PSEUDO_FILESYSTEMS = new Set([
@@ -36,6 +42,7 @@ const port = Number(process.env.PORT || 4321);
  * HOST is still honoured for anyone pinning it to one interface.
  */
 const host = process.env.HOST || undefined;
+const volumeReport = inspectVolumes();
 const volume = mountedVolume();
 const dataDir = process.env.HEARTH_DATA
   ? path.dirname(path.resolve(process.env.HEARTH_DATA))
@@ -156,31 +163,55 @@ function platform() {
  * one — and guessing wrong would quietly move a family's calendar. Asking the
  * platform first means the check can only fire where a volume is the point.
  */
-function mountedVolume() {
-  if (!platform()) return null;
+/**
+ * Looks at each place a volume might be, and says what it found there. The
+ * reasons matter as much as the answer: a volume rejected for being read-only
+ * is a mount that exists and needs its ownership fixed, which is a completely
+ * different problem from one that was never attached, and telling them apart
+ * from the outside was previously impossible.
+ */
+function inspectVolumes() {
+  if (!platform()) return [];
 
-  // A mount sits on its own device; a directory the image happened to create
-  // shares one with the root filesystem. That distinction is the whole point —
-  // /app/data exists in our image whether or not anything is mounted over it,
-  // and treating the empty one as storage is how a calendar disappears.
-  let rootDevice;
+  let rootDevice = null;
   try {
     rootDevice = fs.statSync('/').dev;
   } catch {
-    return null;
+    // Without it the device test is skipped; it is corroboration, not proof.
   }
 
-  for (const candidate of ['/data', '/var/hearth', '/app/data']) {
+  return VOLUME_CANDIDATES.map(({ path: candidate, ownedByImage }) => {
+    let stat;
     try {
-      const stat = fs.statSync(candidate);
-      if (!stat.isDirectory() || stat.dev === rootDevice) continue;
-      fs.accessSync(candidate, fs.constants.W_OK);
-      return candidate;
+      stat = fs.statSync(candidate);
     } catch {
-      // Not mounted, or not ours to write to — try the next one.
+      return { path: candidate, state: 'absent' };
     }
-  }
-  return null;
+    if (!stat.isDirectory()) return { path: candidate, state: 'not-a-directory' };
+
+    /*
+     * /app/data exists in our own image whether or not anything is mounted
+     * over it, so for that one a separate device is the only thing telling a
+     * real volume from the empty directory we made. The others are never
+     * created by the image, so their existence on a host is the signal — and
+     * insisting on a separate device there rejected real mounts on runtimes
+     * that share one.
+     */
+    if (ownedByImage && rootDevice !== null && stat.dev === rootDevice) {
+      return { path: candidate, state: 'not-mounted' };
+    }
+
+    try {
+      fs.accessSync(candidate, fs.constants.W_OK);
+    } catch {
+      return { path: candidate, state: 'read-only', uid: stat.uid, gid: stat.gid };
+    }
+    return { path: candidate, state: 'usable' };
+  });
+}
+
+function mountedVolume() {
+  return volumeReport.find((entry) => entry.state === 'usable')?.path ?? null;
 }
 
 /**
@@ -202,6 +233,19 @@ function warnIfEphemeral() {
     '     inside the container, and every deploy will wipe it.',
     '',
   ];
+
+  const blocked = volumeReport.filter((entry) => entry.state === 'read-only');
+  if (blocked.length) {
+    for (const entry of blocked) {
+      lines.push(`     ${entry.path} IS mounted, but is owned by uid ${entry.uid} and this`);
+      lines.push('     process cannot write to it, so it cannot be used.');
+    }
+    lines.push('');
+    lines.push('     Give the mount to the user this runs as, or run as root.');
+    lines.push('');
+    console.warn(lines.join('\n'));
+    return;
+  }
 
   const seen = otherMounts();
   if (seen.length) {

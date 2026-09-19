@@ -261,10 +261,15 @@ the health check; two things have to be done in the dashboard because Railway
 does not read them from config.
 
 1. **New Project → Deploy from GitHub repo**, and pick this repository.
-2. **Service → Settings → Volumes**: add a volume mounted at `/data`. Without
-   it the calendar is wiped on every deploy. The image runs as an unprivileged
-   user, so if the mount arrives owned by root the app says so and stops rather
-   than failing later mid-write.
+2. **Attach a volume mounted at `/data`.** Without it the calendar is wiped on
+   every deploy. Railway has moved this around: try right-clicking the service
+   on the project canvas for **Attach Volume**, or **+ Create → Volume**, or
+   `railway volume add --mount-path /data`. It needs a paid plan.
+
+   The mount arrives owned by root and the app runs unprivileged, so the image's
+   entrypoint takes ownership of it before dropping privileges. If something
+   still cannot write to it, the start-up log names the path and the uid that
+   owns it rather than leaving you to guess.
 3. **Service → Variables**: nothing to set. A volume at `/data` is found on its
    own and the first person to open the site creates the account. Set
    `HEARTH_DATA` only to put the database somewhere else.

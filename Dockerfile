@@ -1,15 +1,24 @@
 # Hearth has no dependencies, so the image is just Node plus the source.
 FROM node:22-alpine
 
+# su-exec drops privileges in the entrypoint, after it has handed whatever
+# volume is mounted to the user the app runs as.
+RUN apk add --no-cache su-exec
+
 WORKDIR /app
 COPY package.json ./
 COPY server ./server
 COPY public ./public
+COPY docker-entrypoint.sh /usr/local/bin/
 
-# Run unprivileged, and make sure the calendar's home is writable whether it
-# stays inside the image or gets a mounted volume.
-RUN mkdir -p /app/data && chown -R node:node /app
-USER node
+RUN mkdir -p /app/data \
+ && chown -R node:node /app \
+ && chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Deliberately no USER: the entrypoint starts as root so it can take ownership
+# of a root-owned mount, then becomes node before running anything of ours.
+# Dropping here instead would leave a mounted volume unwritable, which fails by
+# silently storing the calendar somewhere that does not survive a deploy.
 
 ENV PORT=4321
 # Declares this as a deployment, not a checkout: a volume mounted anywhere we
@@ -28,4 +37,5 @@ EXPOSE 4321
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD wget -qO- http://127.0.0.1:4321/api/health || exit 1
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "server/index.js"]
