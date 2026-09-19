@@ -240,17 +240,22 @@ function addMonths(key, months) {
  * widths, costs a row of the month, and an estimate cannot see that happen.
  */
 function monthWeeks() {
-  /* A date and about three entries. Four made the rows tall enough that a
-     720p panel lost a whole week to make room for capacity most days never
-     use; a day busier than three still says how many more it has. */
-  const ROW = 88;
   const HEAD = 72; // the month's own heading and its weekday names
+  /* Six weeks is only worth it when the rows are tall enough to read: squeezed
+     onto a short panel it is a full month of "+2 more", which was the whole
+     complaint. Below that, four weeks around today — enough either side to
+     plan by — as long as a row can still hold a date and an entry or two. */
+  const COMFORTABLE = 95;
+  const USABLE = 56;
 
   const measured = el.main?.clientHeight ?? 0;
   // Before the first layout there is nothing to measure; the viewport, less
   // what the surrounding chrome usually takes, is close enough for one frame.
   const available = (measured > 0 ? measured : (window.innerHeight || 0) - 160) - HEAD;
-  return Math.max(3, Math.min(6, Math.floor(available / ROW)));
+
+  if (available / 6 >= COMFORTABLE) return 6;
+  if (available / 4 >= USABLE) return 4;
+  return 3;
 }
 
 // -- today ----------------------------------------------------------------
