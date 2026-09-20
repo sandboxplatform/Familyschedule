@@ -631,6 +631,17 @@ body.show-cursor {
 
 /* -- day timeline --------------------------------------------------------- */
 
+.timeline-wrap {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.timeline-wrap[hidden] {
+  display: none;
+}
+
 .timeline {
   display: grid;
   min-height: 0;

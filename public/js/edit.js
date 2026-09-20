@@ -8,6 +8,7 @@
  */
 
 import { api, subscribe } from './api.js';
+import { createTimePicker } from './timepicker.js';
 import {
   addDays,
   categoryMeta,
@@ -43,8 +44,8 @@ const form = {
   title: $('titleInput'),
   date: $('dateInput'),
   endDate: $('endDateInput'),
-  start: $('startTimeInput'),
-  end: $('endTimeInput'),
+  start: null, // built in wire(), once the clock setting is known
+  end: null,
   timeFields: $('timeFields'),
   allDay: $('allDayToggle'),
   memberChips: $('memberChips'),
@@ -105,6 +106,8 @@ function applyBootstrap({ settings, members, categories, palette, user, storage 
   state.palette = palette;
   state.user = user || null;
   showStorageWarning(storage);
+  form.start?.setClock(settings.clock24h);
+  form.end?.setClock(settings.clock24h);
   ui.root.dataset.theme = settings.theme;
   $('signOut').hidden = false;
   $('signedInAs').textContent = state.user ? state.user.email : '';
@@ -315,8 +318,8 @@ function fillEventForm() {
   form.title.value = draft.title;
   form.date.value = draft.date;
   form.endDate.value = draft.endDate;
-  form.start.value = draft.startTime;
-  form.end.value = draft.endTime;
+  form.start.set(draft.startTime);
+  form.end.set(draft.endTime);
   form.location.value = draft.location;
   form.notes.value = draft.notes;
   form.repeat.value = draft.recurrence.freq;
@@ -655,6 +658,8 @@ async function saveSettings() {
     const { settings } = await api.updateSettings(payload);
     state.settings = settings;
     ui.root.dataset.theme = settings.theme;
+    form.start?.setClock(settings.clock24h);
+    form.end?.setClock(settings.clock24h);
     fillSettings();
     toast('Settings saved');
   } catch (error) {
@@ -744,6 +749,13 @@ async function runPlaceSearch(query, results, input) {
   );
 }
 
+/** An hour later, clamped to the end of the day. */
+function addHour(time) {
+  const [h, m] = time.split(':').map(Number);
+  const next = Math.min(23, h + 1);
+  return `${String(next).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function useLocation() {
   if (!navigator.geolocation) {
     toast('This browser has no location support', 'error');
@@ -808,6 +820,16 @@ function wire() {
   $('openRegistrationToggle').addEventListener('click', () =>
     toggleSwitch($('openRegistrationToggle')),
   );
+
+  form.start = createTimePicker($('startTime'), {
+    clock24h: state.settings?.clock24h,
+    // An end before its start is the common slip; nudging it along is kinder
+    // than refusing the save afterwards.
+    onChange: (value) => {
+      if (value && form.end.value && form.end.value < value) form.end.set(addHour(value));
+    },
+  });
+  form.end = createTimePicker($('endTime'), { clock24h: state.settings?.clock24h });
   $('weatherToggle').addEventListener('click', () => {
     const on = toggleSwitch($('weatherToggle'));
     $('weatherFields').hidden = !on;

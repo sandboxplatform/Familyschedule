@@ -73,6 +73,8 @@ const el = {
   boardWrap: document.getElementById('boardWrap'),
   weekNav: document.getElementById('weekNav'),
   timeline: document.getElementById('timeline'),
+  timelineWrap: document.getElementById('timelineWrap'),
+  dayNav: document.getElementById('dayNav'),
   month: document.getElementById('month'),
   viewSwitch: document.getElementById('viewSwitch'),
   themeToggle: document.getElementById('themeToggle'),
@@ -94,6 +96,7 @@ const state = {
      left. */
   weekOffset: 0,
   monthOffset: 0,
+  dayOffset: 0,
   lastMinute: -1,
 };
 
@@ -161,8 +164,9 @@ function render() {
     return;
   }
   if (state.mode === 'day') {
-    renderToday();
-    renderTimeline();
+    renderDayNav();
+    renderToday(shownDayKey());
+    renderTimeline(shownDayKey());
     return;
   }
   renderToday();
@@ -187,6 +191,12 @@ function fetchRange() {
     // live stream has something to redraw from before the next fetch lands.
     const shown = addDays(startOfWeekKey(today, weekStart), (state.weekOffset ?? 0) * 7);
     return { from: addDays(shown, -7), to: addDays(shown, 20) };
+  }
+
+  if (state.mode === 'day') {
+    // A few days either side, so stepping redraws before the next fetch lands.
+    const shown = addDays(today, state.dayOffset ?? 0);
+    return { from: addDays(shown, -3), to: addDays(shown, 3) };
   }
 
   const from = startOfWeekKey(today, weekStart);
@@ -260,10 +270,17 @@ function monthWeeks() {
 
 // -- today ----------------------------------------------------------------
 
-function renderToday() {
-  const day = state.days.find((d) => d.date === state.today);
+function renderToday(dateKey = state.today) {
+  const day = state.days.find((d) => d.date === dateKey);
   const items = day ? day.items : [];
   const minutes = nowMinutes();
+  const isNow = dateKey === state.today;
+
+  // The panel is about the day on screen, so it says which day that is, and
+  // drops the parts that only mean anything about today.
+  el.todayHeading.textContent = isNow ? 'Today' : dayName(dateKey, 'long');
+  el.spotlight.hidden = !isNow;
+  el.whoNext.hidden = !isNow;
 
   el.todayCount.textContent = items.length
     ? `${items.length} ${items.length === 1 ? 'thing' : 'things'} on`
@@ -279,8 +296,10 @@ function renderToday() {
           : emptyState('A clear day', 'Nothing scheduled — enjoy it.')]),
   );
 
-  renderSpotlight(items, minutes);
-  renderWhoNext(minutes);
+  if (isNow) {
+    renderSpotlight(items, minutes);
+    renderWhoNext(minutes);
+  }
   requestAnimationFrame(() => trimOverflow(el.todayList));
 }
 
@@ -603,8 +622,8 @@ function miniCard(item) {
  * glance tells you how much of the day is already spoken for; all-day items
  * ride above it because they have no place on a time axis.
  */
-function renderTimeline() {
-  const day = state.days.find((d) => d.date === state.today);
+function renderTimeline(dateKey = state.today) {
+  const day = state.days.find((d) => d.date === dateKey);
   const items = day ? day.items : [];
   const allDay = items.filter((item) => item.allDay || !item.startTime);
   const timed = items.filter((item) => !allDay.includes(item));
@@ -651,7 +670,7 @@ function renderTimeline() {
   // Only mark "now" when the clock is actually on the rail — clamping it would
   // park the line at 6am through the small hours and read as the wrong time.
   const minutes = nowMinutes();
-  if (isToday(state.today) && minutes >= rail.start * 60 && minutes <= rail.end * 60) {
+  if (dateKey === todayKey() && minutes >= rail.start * 60 && minutes <= rail.end * 60) {
     const now = document.createElement('div');
     now.className = 'rail-now';
     now.style.setProperty('--at', String(railFraction(minutes)));
@@ -734,7 +753,7 @@ function timelineBlock(item, lane, lanes) {
   block.style.setProperty('--lanes', String(lanes));
 
   const minutes = nowMinutes();
-  if (isToday(state.today)) {
+  if (shownDayKey() === todayKey()) {
     if (start <= minutes && minutes < end) block.classList.add('is-now');
     else if (end <= minutes) block.classList.add('is-past');
   }
@@ -909,10 +928,6 @@ function emptyBlock(big, text) {
   strong.textContent = big;
   wrap.append(strong, document.createTextNode(text));
   return wrap;
-}
-
-function isToday(key) {
-  return key === todayKey();
 }
 
 // -- shared bits ----------------------------------------------------------
@@ -1102,13 +1117,14 @@ function setMode(mode, { persist = true } = {}) {
 
   if (next !== 'week' && state.weekOffset) state.weekOffset = 0;
   if (next !== 'month' && state.monthOffset) state.monthOffset = 0;
-  if (next !== 'week' && next !== 'month') clearTimeout(returnTimer);
+  if (next !== 'day' && state.dayOffset) state.dayOffset = 0;
+  if (next !== 'week' && next !== 'month' && next !== 'day') clearTimeout(returnTimer);
 
   state.mode = next;
   el.main.dataset.mode = next;
 
   el.boardWrap.hidden = next === 'day' || next === 'month';
-  el.timeline.hidden = next !== 'day';
+  el.timelineWrap.hidden = next !== 'day';
   el.month.hidden = next !== 'month';
 
   for (const button of el.viewSwitch.querySelectorAll('[data-view]')) {
@@ -1146,6 +1162,40 @@ function stepWeek(by) {
   refresh();
 }
 
+/** The day on screen: today, or however far it has been stepped from it. */
+function shownDayKey() {
+  return addDays(state.today, state.dayOffset ?? 0);
+}
+
+function renderDayNav() {
+  const shown = shownDayKey();
+  const atNow = (state.dayOffset ?? 0) === 0;
+  el.dayNav.replaceChildren(
+    ...periodNav({
+      label: atNow ? 'Today' : longDate(shown),
+      atNow,
+      nowLabel: 'Today',
+      unit: 'day',
+      step: (by) => stepDay(by),
+      now: goToToday,
+    }),
+  );
+}
+
+function stepDay(by) {
+  if (state.mode !== 'day') return;
+  state.dayOffset += by;
+  scheduleReturnToNow();
+  refresh();
+}
+
+function goToToday() {
+  if (!state.dayOffset) return;
+  state.dayOffset = 0;
+  clearTimeout(returnTimer);
+  refresh();
+}
+
 function stepMonth(by) {
   if (state.mode !== 'month') return;
   state.monthOffset += by;
@@ -1169,10 +1219,11 @@ function goToThisWeek() {
 
 function scheduleReturnToNow() {
   clearTimeout(returnTimer);
-  if (!state.weekOffset && !state.monthOffset) return;
+  if (!state.weekOffset && !state.monthOffset && !state.dayOffset) return;
   returnTimer = setTimeout(() => {
     goToThisWeek();
     goToThisMonth();
+    goToToday();
   }, RETURN_MS);
 }
 
@@ -1254,11 +1305,17 @@ function onKey(event) {
       stepMonth(by);
       return;
     }
+    if (state.mode === 'day') {
+      event.preventDefault();
+      stepDay(by);
+      return;
+    }
   }
   if (event.key === 'Home') {
     event.preventDefault();
     goToThisWeek();
     goToThisMonth();
+    goToToday();
     return;
   }
 

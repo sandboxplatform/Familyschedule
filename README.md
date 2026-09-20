@@ -20,7 +20,7 @@ you're still on the call.
 | Today's agenda, what's happening now, what's next | Add, edit and delete in a couple of taps |
 | Four views: day, week, month or agenda | Repeat rules without the iCal jargon |
 | Per-person colours and a "next up" line for everyone | Colour-code the household |
-| Optional weather, live clock, light and dark | Installs to the home screen as an app |
+| Optional weather, live clock, light and dark | Times in plain am/pm, not a native spinner |
 
 ## Why it's built this way
 
@@ -72,13 +72,13 @@ A bar at the bottom of the display switches between them, and so do the keys:
 
 | View | Key | What it shows |
 | --- | --- | --- |
-| **Day** | `D` | Today hour by hour, on a rail against the clock, with a line at the current time. Overlapping entries sit side by side. The rail fits itself to the hours actually in use. |
+| **Day** | `D` | A day hour by hour, on a rail against the clock, with a line at the current time. Overlapping entries sit side by side, and the rail fits itself to the hours actually in use. Steps day by day like the others. |
 | **Week** | `W` | A week, Monday to Sunday, side by side. `←` and `→` step back and forward through weeks, `Home` returns to this one — and so does the screen itself, after a few minutes, so a wall display cannot be left showing last Tuesday as though it were current |
 | **Month** | `M` | The month, today picked out, and steppable like the week. A screen too short to show six weeks of entries properly shows fewer weeks around today instead, at full detail, rather than a full month of `+N more` — and then steps by that window rather than by whole months |
 | **Agenda** | `A` | Today's panel plus the next six days — the default |
 
-`←` and `→` step back and forward in week and month, `Home` returns to now, and
-so does the screen itself after a few minutes. `V` cycles the views
+`←` and `→` step back and forward in day, week and month, `Home` returns to now,
+and so does the screen itself after a few minutes. `V` cycles the views
 (`Shift`+`V` goes back), `L` switches between light and dark, `F` toggles fullscreen, `R` forces a refresh and `E` opens the editor —
 as does the **Add or change plans** button in the bar. The mouse cursor fades
 out on its own.
