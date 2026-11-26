@@ -16,10 +16,12 @@ import { FREQUENCIES, normalizeRule } from './recurrence.js';
 import {
   importLegacyFile,
   readEvents,
+  readGroceries,
   readMembers,
   readSettings,
   transaction,
   writeEvents,
+  writeGroceries,
   writeMembers,
   writeSettings,
 } from './db.js';
@@ -43,6 +45,10 @@ export const PALETTE = [
 
 const SCHEMA_VERSION = 1;
 const MAX_TEXT = 280;
+
+/** How long a shopping-list entry may be. Voice input clamps to the same. */
+export const GROCERY_NAME_MAX = 80;
+export const GROCERY_NOTE_MAX = 120;
 
 export class ValidationError extends Error {
   constructor(message) {
@@ -74,7 +80,13 @@ export function defaultSettings() {
 }
 
 export function emptyState() {
-  return { version: SCHEMA_VERSION, settings: defaultSettings(), members: [], events: [] };
+  return {
+    version: SCHEMA_VERSION,
+    settings: defaultSettings(),
+    members: [],
+    events: [],
+    groceries: [],
+  };
 }
 
 export class Store extends EventEmitter {
@@ -106,9 +118,11 @@ export class Store extends EventEmitter {
       settings: validateSettings({ ...defaultSettings(), ...readSettings(this.#db) }),
       members: readMembers(this.#db),
       events: readEvents(this.#db),
+      groceries: readGroceries(this.#db),
     };
 
-    const empty = !this.#state.members.length && !this.#state.events.length;
+    const empty =
+      !this.#state.members.length && !this.#state.events.length && !this.#state.groceries.length;
     if (empty && seed) {
       this.#state = migrate(seed());
       this.#writeAll();
@@ -133,6 +147,10 @@ export class Store extends EventEmitter {
 
   get events() {
     return structuredClone(this.#state.events);
+  }
+
+  get groceries() {
+    return structuredClone(this.#state.groceries);
   }
 
   // -- members ------------------------------------------------------------
@@ -160,6 +178,10 @@ export class Store extends EventEmitter {
     this.#state.members.splice(index, 1);
     for (const event of this.#state.events) {
       event.memberIds = event.memberIds.filter((memberId) => memberId !== id);
+    }
+    // What they asked for is still needed; it just no longer says who by.
+    for (const item of this.#state.groceries) {
+      if (item.addedBy === id) item.addedBy = null;
     }
     this.#commit('members');
   }
@@ -222,6 +244,95 @@ export class Store extends EventEmitter {
     return structuredClone(event);
   }
 
+  // -- groceries ----------------------------------------------------------
+
+  /**
+   * Adds something to the shopping list — unless it is already there, in which
+   * case the existing row is returned rather than a second one made. A row that
+   * had been ticked off comes back unticked: asking for it again means it is
+   * needed again.
+   */
+  addGroceryItem(input) {
+    const candidate = validateGroceryItem(input, this.#state.members);
+    const existing = this.#state.groceries.find(
+      (item) => foldName(item.name) === foldName(candidate.name),
+    );
+
+    if (existing) {
+      const revived = existing.checked;
+      let changed = revived;
+      if (revived) {
+        existing.checked = false;
+        existing.checkedAt = null;
+      }
+      if (candidate.note && !existing.note) {
+        existing.note = candidate.note;
+        changed = true;
+      }
+      if (changed) {
+        existing.updatedAt = new Date().toISOString();
+        this.#commit('groceries');
+      }
+      return { item: structuredClone(existing), duplicate: true, revived };
+    }
+
+    // A new row always starts on the list, whatever the request said.
+    const item = { ...candidate, checked: false, checkedAt: null };
+    this.#state.groceries.push(item);
+    this.#commit('groceries');
+    return { item: structuredClone(item), duplicate: false, revived: false };
+  }
+
+  /**
+   * Renames, re-notes, ticks or unticks a row. Ticking stamps when; unticking
+   * clears it; editing a row that is already ticked leaves the stamp alone, so
+   * the picked list does not reshuffle under somebody halfway round the shop.
+   */
+  updateGroceryItem(id, input) {
+    const index = this.#state.groceries.findIndex((item) => item.id === id);
+    if (index === -1) throw new NotFoundError(`No shopping-list item with id ${id}`);
+    const existing = this.#state.groceries[index];
+
+    const merged = validateGroceryItem(
+      {
+        ...existing,
+        ...pick(input, ['name', 'note', 'checked', 'addedBy']),
+        id,
+        createdAt: existing.createdAt,
+      },
+      this.#state.members,
+    );
+
+    const clash = this.#state.groceries.find(
+      (item) => item.id !== id && foldName(item.name) === foldName(merged.name),
+    );
+    if (clash) throw new ValidationError(`${clash.name} is already on the list`);
+
+    if (merged.checked && !existing.checked) merged.checkedAt = new Date().toISOString();
+    else if (merged.checked) merged.checkedAt = existing.checkedAt;
+    else merged.checkedAt = null;
+
+    this.#state.groceries[index] = merged;
+    this.#commit('groceries');
+    return structuredClone(merged);
+  }
+
+  deleteGroceryItem(id) {
+    const index = this.#state.groceries.findIndex((item) => item.id === id);
+    if (index === -1) throw new NotFoundError(`No shopping-list item with id ${id}`);
+    this.#state.groceries.splice(index, 1);
+    this.#commit('groceries');
+  }
+
+  /** Drops everything already in the trolley. Returns how many went. */
+  clearPickedGroceries() {
+    const before = this.#state.groceries.length;
+    this.#state.groceries = this.#state.groceries.filter((item) => !item.checked);
+    const removed = before - this.#state.groceries.length;
+    if (removed) this.#commit('groceries');
+    return removed;
+  }
+
   // -- settings -----------------------------------------------------------
 
   updateSettings(input) {
@@ -250,6 +361,9 @@ export class Store extends EventEmitter {
           writeEvents(this.#db, this.#state.events);
         }
         if (scope === 'settings' || scope === 'all') writeSettings(this.#db, this.#state.settings);
+        if (scope === 'members' || scope === 'groceries' || scope === 'all') {
+          writeGroceries(this.#db, this.#state.groceries);
+        }
       });
     } catch (error) {
       this.emit('error', error);
@@ -263,6 +377,7 @@ export class Store extends EventEmitter {
       writeSettings(this.#db, this.#state.settings);
       writeMembers(this.#db, this.#state.members);
       writeEvents(this.#db, this.#state.events);
+      writeGroceries(this.#db, this.#state.groceries);
     });
   }
 
@@ -422,6 +537,36 @@ function clampNumber(value, fallback, min, max) {
   return Math.min(max, Math.max(min, n));
 }
 
+/** How two names are compared for "already on the list": case and spacing aside. */
+function foldName(name) {
+  return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
+function pick(input, keys) {
+  const out = {};
+  for (const key of keys) {
+    if (input && Object.hasOwn(input, key)) out[key] = input[key];
+  }
+  return out;
+}
+
+export function validateGroceryItem(input, members = []) {
+  const name = text(input?.name, 'name', { max: GROCERY_NAME_MAX, required: true }).replace(/\s+/g, ' ');
+  const known = new Set(members.map((m) => m.id));
+  const checked = Boolean(input?.checked);
+  const now = new Date().toISOString();
+  return {
+    id: typeof input?.id === 'string' && input.id ? input.id : newId(),
+    name,
+    note: text(input?.note, 'note', { max: GROCERY_NOTE_MAX }),
+    checked,
+    checkedAt: checked && typeof input?.checkedAt === 'string' ? input.checkedAt : null,
+    addedBy: typeof input?.addedBy === 'string' && known.has(input.addedBy) ? input.addedBy : null,
+    createdAt: typeof input?.createdAt === 'string' ? input.createdAt : now,
+    updatedAt: now,
+  };
+}
+
 export function newId() {
   return randomUUID().replace(/-/g, '').slice(0, 12);
 }
@@ -453,6 +598,18 @@ export function migrate(raw) {
     }
   }
   state.events = events;
+
+  const groceries = [];
+  for (const candidate of Array.isArray(raw.groceries) ? raw.groceries : []) {
+    try {
+      const item = validateGroceryItem(candidate, state.members);
+      if (groceries.some((other) => foldName(other.name) === foldName(item.name))) continue;
+      groceries.push(item);
+    } catch {
+      // A shopping-list row is never worth refusing to start over.
+    }
+  }
+  state.groceries = groceries;
 
   return state;
 }

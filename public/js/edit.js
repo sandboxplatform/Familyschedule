@@ -1,7 +1,7 @@
 /**
  * The phone editor.
  *
- * One screen per job — schedule, people, settings — plus a bottom sheet for the
+ * One screen per job — schedule, shopping, people, settings — plus a bottom sheet for the
  * event form. Every save goes straight to the server, which pushes the change
  * to the TV over SSE, so the fridge calendar updates while you are still
  * standing there holding the phone.
@@ -9,6 +9,7 @@
 
 import { api, subscribe } from './api.js';
 import { createTimePicker } from './timepicker.js';
+import { listenOnce, voiceSupport } from './speech.js';
 import {
   addDays,
   categoryMeta,
@@ -71,6 +72,11 @@ const state = {
   categories: [],
   palette: [],
   days: [],
+  groceries: [],
+  /* Ticks sent but not yet answered, by item id. A refresh that lands in the
+     meantime must not flick a row back to how it was before the tap. */
+  pendingTicks: new Map(),
+  view: 'schedule',
   user: null,
   from: todayKey(),
   draft: null,
@@ -129,17 +135,25 @@ async function refreshQuietly() {
 
 // -- agenda ----------------------------------------------------------------
 
+let agendaRequest = 0;
+
 async function loadAgenda(from) {
   state.from = from;
   ui.jumpDate.value = from;
+  // Saves in quick succession each trigger a refresh; only the latest one to be
+  // asked for may draw, or a slow early answer puts back a list already changed.
+  const id = ++agendaRequest;
   const payload = await api.calendar(from, addDays(from, AGENDA_DAYS - 1));
+  if (id !== agendaRequest) return;
   state.days = payload.days;
   state.settings = payload.settings;
   ui.root.dataset.theme = payload.settings.theme;
+  setGroceries(payload.groceries || []);
   renderAgenda();
 }
 
 function renderAgenda() {
+  if (state.view !== 'schedule') return;
   const populated = state.days.filter((day) => day.items.length);
   const total = populated.reduce((sum, day) => sum + day.items.length, 0);
 
@@ -516,6 +530,248 @@ async function endSeries() {
   }
 }
 
+// -- shopping --------------------------------------------------------------
+
+function setGroceries(list) {
+  state.groceries = list.map((item) =>
+    state.pendingTicks.has(item.id) ? { ...item, checked: state.pendingTicks.get(item.id) } : item,
+  );
+  renderGroceries();
+}
+
+/**
+ * Two lists: what is still to get, in the order it was asked for, and what is
+ * already in the trolley, in the order it went in — so neither reshuffles while
+ * somebody is working down it.
+ */
+function renderGroceries() {
+  const open = state.groceries
+    .filter((item) => !item.checked)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const picked = state.groceries
+    .filter((item) => item.checked)
+    .sort((a, b) => (a.checkedAt || '').localeCompare(b.checkedAt || ''));
+
+  const openList = $('groceryOpen');
+  if (open.length) {
+    openList.replaceChildren(...open.map(groceryRow));
+  } else {
+    const blank = document.createElement('div');
+    blank.className = 'blank';
+    const big = document.createElement('span');
+    big.className = 'big';
+    big.textContent = '🛒';
+    blank.append(
+      big,
+      document.createTextNode(picked.length ? 'Everything is in the trolley.' : 'Nothing on the list.'),
+    );
+    openList.replaceChildren(blank);
+  }
+
+  $('groceryPickedWrap').hidden = !picked.length;
+  $('groceryPicked').replaceChildren(...picked.map(groceryRow));
+  $('clearPicked').textContent = `Clear ${picked.length} picked ${picked.length === 1 ? 'item' : 'items'}`;
+
+  if (state.view === 'shopping') {
+    ui.viewSub.textContent = open.length
+      ? `${open.length} to get${picked.length ? ` · ${picked.length} picked` : ''}`
+      : picked.length
+        ? 'All picked'
+        : 'Shared with everyone in the house';
+  }
+}
+
+/**
+ * The whole row is the tick: in a shop there is one hand free and a trolley in
+ * the other. Only the small remove button sits outside it.
+ */
+function groceryRow(item) {
+  const row = document.createElement('div');
+  row.className = 'grocery-row';
+  if (item.checked) row.classList.add('is-picked');
+
+  const tick = document.createElement('button');
+  tick.type = 'button';
+  tick.className = 'grocery-tick';
+  tick.setAttribute('aria-pressed', String(item.checked));
+  tick.setAttribute('aria-label', `${item.name}${item.checked ? ', picked' : ''}`);
+
+  const box = document.createElement('span');
+  box.className = 'box';
+  box.setAttribute('aria-hidden', 'true');
+  const text = document.createElement('span');
+  text.className = 'text';
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = item.name;
+  text.append(name);
+  if (item.note) {
+    const note = document.createElement('span');
+    note.className = 'note';
+    note.textContent = item.note;
+    text.append(note);
+  }
+  tick.append(box, text);
+  tick.addEventListener('click', () => toggleGrocery(item.id));
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'grocery-remove';
+  remove.textContent = '✕';
+  remove.setAttribute('aria-label', `Remove ${item.name}`);
+  remove.addEventListener('click', () => removeGrocery(item.id));
+
+  row.append(tick, remove);
+  return row;
+}
+
+/** Applied on screen first and rolled back if the save fails: one bar of signal. */
+async function toggleGrocery(id) {
+  const item = state.groceries.find((g) => g.id === id);
+  if (!item) return;
+  const previous = { checked: item.checked, checkedAt: item.checkedAt };
+  const next = !item.checked;
+
+  item.checked = next;
+  item.checkedAt = next ? new Date().toISOString() : null;
+  state.pendingTicks.set(id, next);
+  renderGroceries();
+
+  try {
+    const { item: saved } = await api.updateGrocery(id, { checked: next });
+    state.pendingTicks.delete(id);
+    const index = state.groceries.findIndex((g) => g.id === id);
+    if (index !== -1) state.groceries[index] = saved;
+    renderGroceries();
+  } catch (error) {
+    state.pendingTicks.delete(id);
+    const current = state.groceries.find((g) => g.id === id);
+    if (current) Object.assign(current, previous);
+    renderGroceries();
+    toast(`Couldn’t save that — ${error.message}`, 'error');
+  }
+}
+
+async function removeGrocery(id) {
+  const index = state.groceries.findIndex((g) => g.id === id);
+  if (index === -1) return;
+  const [removed] = state.groceries.splice(index, 1);
+  renderGroceries();
+  try {
+    await api.deleteGrocery(id);
+  } catch (error) {
+    if (error.status !== 404) {
+      state.groceries.splice(index, 0, removed);
+      renderGroceries();
+      toast(error.message, 'error');
+    }
+  }
+}
+
+/** Adds each name in turn and says, in one line, what happened to them. */
+async function addGroceries(names) {
+  const added = [];
+  const already = [];
+  const revived = [];
+  for (const name of names) {
+    try {
+      const result = await api.addGrocery({ name });
+      if (result.revived) revived.push(result.item.name);
+      else if (result.duplicate) already.push(result.item.name);
+      else added.push(result.item.name);
+      upsertGrocery(result.item);
+    } catch (error) {
+      toast(error.message, 'error');
+      return false;
+    }
+  }
+  renderGroceries();
+
+  const parts = [];
+  if (added.length) parts.push(`Added ${listOf(added)}`);
+  if (revived.length) parts.push(`${listOf(revived)} back on the list`);
+  if (already.length) parts.push(`${listOf(already)} ${already.length === 1 ? 'is' : 'are'} already on the list`);
+  if (parts.length) toast(parts.join(' · '));
+  return true;
+}
+
+function upsertGrocery(item) {
+  const index = state.groceries.findIndex((g) => g.id === item.id);
+  if (index === -1) state.groceries.push(item);
+  else state.groceries[index] = item;
+}
+
+function listOf(names) {
+  if (names.length <= 3) return names.join(', ');
+  return `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`;
+}
+
+async function submitGrocery(event) {
+  event.preventDefault();
+  const input = $('groceryInput');
+  const name = input.value.trim();
+  if (!name) {
+    input.focus();
+    return;
+  }
+  // Cleared now, not when the server answers: in a shop people type the next
+  // thing straight away, and it must not be glued onto the one still saving.
+  input.value = '';
+  input.focus();
+  const saved = await addGroceries([name]);
+  if (!saved && !input.value) input.value = name;
+}
+
+async function clearPicked() {
+  try {
+    const { removed } = await api.clearPickedGroceries();
+    state.groceries = state.groceries.filter((g) => !g.checked);
+    renderGroceries();
+    toast(removed ? `Cleared ${removed} ${removed === 1 ? 'item' : 'items'}` : 'Nothing to clear');
+  } catch (error) {
+    toast(error.message, 'error');
+  }
+}
+
+/**
+ * The mic only appears where it can work. Where it cannot, the reason is kept
+ * and shown as a hint, rather than offering a button that does nothing.
+ */
+let stopListening = null;
+
+function wireVoice() {
+  const button = $('micButton');
+  const hint = $('voiceHint');
+  const support = voiceSupport(window);
+
+  button.hidden = !support.available;
+  hint.hidden = support.available;
+  hint.textContent = support.available ? '' : support.message;
+  if (!support.available) return;
+
+  button.addEventListener('click', () => {
+    if (stopListening) {
+      stopListening();
+      return;
+    }
+    button.classList.add('is-listening');
+    button.setAttribute('aria-label', 'Stop listening');
+    toast('Listening — say what you need');
+    stopListening = listenOnce({
+      onItems: (items) => {
+        if (items.length) addGroceries(items);
+        else toast('Didn’t hear anything to add', 'error');
+      },
+      onError: (message) => toast(message, 'error'),
+      onEnd: () => {
+        stopListening = null;
+        button.classList.remove('is-listening');
+        button.setAttribute('aria-label', 'Add by voice');
+      },
+    }, window);
+  });
+}
+
 // -- people ----------------------------------------------------------------
 
 function renderPeople() {
@@ -812,6 +1068,10 @@ function wire() {
     }
   });
 
+  $('groceryForm').addEventListener('submit', submitGrocery);
+  $('clearPicked').addEventListener('click', clearPicked);
+  wireVoice();
+
   $('addPerson').addEventListener('click', () => openPerson(null));
   $('personForm').addEventListener('submit', savePerson);
   $('deletePerson').addEventListener('click', removePerson);
@@ -892,15 +1152,22 @@ function openRequestedView() {
 }
 
 function switchView(name) {
+  state.view = name;
   for (const view of document.querySelectorAll('.view')) {
     view.classList.toggle('is-active', view.id === `view-${name}`);
   }
   for (const tab of document.querySelectorAll('.tab')) {
     tab.setAttribute('aria-selected', String(tab.dataset.view === name));
   }
-  ui.viewTitle.textContent = { schedule: 'Schedule', people: 'People', settings: 'Settings' }[name];
+  ui.viewTitle.textContent = {
+    schedule: 'Schedule',
+    shopping: 'Shopping',
+    people: 'People',
+    settings: 'Settings',
+  }[name];
   ui.fab.hidden = name !== 'schedule';
   if (name === 'schedule') renderAgenda();
+  if (name === 'shopping') renderGroceries();
   if (name === 'people') ui.viewSub.textContent = `${state.members.length} in the family`;
   if (name === 'settings') ui.viewSub.textContent = 'How the TV looks';
   window.scrollTo({ top: 0, behavior: 'smooth' });

@@ -69,6 +69,7 @@ const el = {
   spotlightMeta: document.getElementById('spotlightMeta'),
   todayList: document.getElementById('todayList'),
   whoNext: document.getElementById('whoNext'),
+  shopping: document.getElementById('shopping'),
   board: document.getElementById('board'),
   boardWrap: document.getElementById('boardWrap'),
   weekNav: document.getElementById('weekNav'),
@@ -88,6 +89,7 @@ const state = {
   settings: null,
   members: new Map(),
   days: [],
+  groceries: [],
   today: todayKey(),
   mode: storedView() || 'agenda',
   /* Steps away from now, for paging the week and month views — weeks in one,
@@ -142,6 +144,7 @@ async function refresh() {
     state.today = payload.today;
     state.members = new Map(payload.members.map((member) => [member.id, member]));
     state.days = payload.days;
+    state.groceries = payload.groceries || [];
 
     applyTheme(payload.settings.theme);
     el.familyName.textContent = payload.settings.familyName;
@@ -300,7 +303,47 @@ function renderToday(dateKey = state.today) {
     renderSpotlight(items, minutes);
     renderWhoNext(minutes);
   }
+  renderShopping();
   requestAnimationFrame(() => trimOverflow(el.todayList));
+}
+
+/**
+ * What is still on the shopping list, read-only, so whoever is heading out can
+ * see it from the doorway. Ticked items are already in a trolley somewhere and
+ * are left out; with nothing left to get the strip goes away entirely.
+ */
+const SHOPPING_SHOWN = 8;
+
+function renderShopping() {
+  const open = state.groceries
+    .filter((item) => !item.checked)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  if (!open.length) {
+    el.shopping.hidden = true;
+    el.shopping.replaceChildren();
+    return;
+  }
+
+  const eyebrow = document.createElement('p');
+  eyebrow.className = 'eyebrow';
+  eyebrow.textContent = `Shopping list · ${open.length}`;
+
+  const list = document.createElement('ul');
+  list.className = 'shopping-items';
+  for (const item of open.slice(0, SHOPPING_SHOWN)) {
+    const li = document.createElement('li');
+    li.textContent = item.name;
+    list.append(li);
+  }
+  if (open.length > SHOPPING_SHOWN) {
+    const more = document.createElement('li');
+    more.className = 'more';
+    more.textContent = `+${open.length - SHOPPING_SHOWN} more`;
+    list.append(more);
+  }
+
+  el.shopping.hidden = false;
+  el.shopping.replaceChildren(eyebrow, list);
 }
 
 function todayRow(item, minutes) {
@@ -589,6 +632,7 @@ function dayColumn(day) {
   }
 
   section.append(head, list);
+  makeDayTarget(section, day.date);
   return section;
 }
 
@@ -904,6 +948,7 @@ function monthCell(date, day, anchor) {
   list.className = 'month-items';
   for (const item of day?.items || []) list.append(monthPill(item));
   cell.append(list);
+  makeDayTarget(cell, date);
   return cell;
 }
 
@@ -931,6 +976,39 @@ function emptyBlock(big, text) {
 }
 
 // -- shared bits ----------------------------------------------------------
+
+/**
+ * Makes a square in the week or month view open that day in the day view, by
+ * click, or by Enter or Space for a remote's select button. The day view
+ * already counts in days from today, so a square only has to say how far away
+ * it is.
+ */
+function makeDayTarget(node, date) {
+  node.classList.add('is-day-target');
+  node.tabIndex = 0;
+  node.setAttribute('role', 'button');
+  node.setAttribute('aria-label', `Open ${longDate(date)}`);
+  node.addEventListener('click', () => openDay(date));
+  node.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      openDay(date);
+    }
+  });
+}
+
+function openDay(date) {
+  state.dayOffset = daysBetween(state.today, date);
+  setMode('day');
+  scheduleReturnToNow();
+  // The day view fetches its own few days either side of the one on screen.
+  refresh();
+}
+
+function daysBetween(from, to) {
+  return Math.round((parseKeyLocal(to) - parseKeyLocal(from)) / 86400000);
+}
 
 function peopleTags(item, className = 'people') {
   if (!item.memberIds.length) return null;

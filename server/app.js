@@ -148,8 +148,41 @@ async function handleApi(req, res, url, ctx) {
       settings: store.settings,
       members: store.members,
       days: groupByDate(slices, dates),
+      // The TV shows the shopping list beside the day, so it rides along with
+      // the fetch the TV already makes rather than costing one of its own.
+      groceries: store.groceries,
     });
     return;
+  }
+
+  // The shopping list. DELETE on the collection clears what has been picked,
+  // which is the only bulk thing anybody does to it.
+  if (segments[0] === 'groceries') {
+    if (segments.length === 1 && method === 'GET') {
+      sendJson(res, 200, { groceries: store.groceries });
+      return;
+    }
+    if (segments.length === 1 && method === 'POST') {
+      const body = await readJson(req);
+      const result = store.addGroceryItem(body);
+      // 200 for a name already on the list: nothing new was created.
+      sendJson(res, result.duplicate ? 200 : 201, result);
+      return;
+    }
+    if (segments.length === 1 && method === 'DELETE') {
+      sendJson(res, 200, { removed: store.clearPickedGroceries() });
+      return;
+    }
+    if (segments.length === 2 && (method === 'PATCH' || method === 'PUT')) {
+      const body = await readJson(req);
+      sendJson(res, 200, { item: store.updateGroceryItem(segments[1], body) });
+      return;
+    }
+    if (segments.length === 2 && method === 'DELETE') {
+      store.deleteGroceryItem(segments[1]);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
   }
 
   if (segments[0] === 'events') {

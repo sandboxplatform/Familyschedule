@@ -242,6 +242,144 @@ body {
   font-weight: 600;
 }
 
+/* -- shopping ------------------------------------------------------------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.grocery-add {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-4);
+}
+
+.grocery-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.grocery-add .btn {
+  flex: none;
+}
+
+.mic-btn {
+  width: 3rem;
+  padding: 0;
+  font-size: 1.2rem;
+}
+
+.mic-btn.is-listening {
+  background: var(--danger);
+  border-color: transparent;
+  animation: mic-pulse 1.2s var(--ease) infinite;
+}
+
+@keyframes mic-pulse {
+  50% {
+    box-shadow: 0 0 0 0.5rem color-mix(in srgb, var(--danger) 25%, transparent);
+  }
+}
+
+.voice-hint {
+  margin: calc(var(--space-2) * -1) 0 var(--space-4);
+}
+
+/* The row is the tick target; the remove button is the only thing beside it. */
+.grocery-row {
+  display: flex;
+  align-items: stretch;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.grocery-tick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3.4rem;
+  padding: var(--space-3);
+  text-align: left;
+  transition: background 0.14s var(--ease);
+}
+
+.grocery-tick:active {
+  background: var(--surface-strong);
+}
+
+.grocery-tick .box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.45rem;
+  border: 2px solid var(--line-strong);
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #07101f;
+}
+
+.grocery-tick .text {
+  display: grid;
+  min-width: 0;
+}
+
+.grocery-tick .name {
+  font-size: 1.02rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.grocery-tick .note {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.grocery-row.is-picked {
+  background: none;
+}
+
+.grocery-row.is-picked .box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.grocery-row.is-picked .box::after {
+  content: '✓';
+}
+
+.grocery-row.is-picked .name {
+  text-decoration: line-through;
+  color: var(--text-faint);
+}
+
+.grocery-remove {
+  flex: none;
+  width: 3rem;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+  border-left: 1px solid var(--line);
+}
+
+.grocery-remove:active {
+  color: var(--danger);
+}
+
+#clearPicked {
+  margin-top: var(--space-2);
+}
+
 /* -- forms ---------------------------------------------------------------- */
 
 .field {
