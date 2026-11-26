@@ -151,3 +151,40 @@ export function describeRecurrence(recurrence) {
   else if (count) base += ` · ${count} times`;
   return base;
 }
+
+/**
+ * The theme a screen should be showing now. With the schedule on it is dark
+ * from `darkFrom` until `lightFrom` by the screen's own clock — 7pm to 7am
+ * unless the household changes it — and the plain `theme` setting otherwise.
+ */
+export function scheduledTheme(settings, now = new Date()) {
+  const fallback = settings?.theme === 'daylight' ? 'daylight' : 'midnight';
+  const schedule = settings?.themeSchedule;
+  if (!schedule?.enabled) return fallback;
+  const dark = minutesOf(schedule.darkFrom);
+  const light = minutesOf(schedule.lightFrom);
+  if (dark === null || light === null || dark === light) return fallback;
+
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const isDark = dark > light
+    ? minutes >= dark || minutes < light // evening into the next morning
+    : minutes >= dark && minutes < light;
+  return isDark ? 'midnight' : 'daylight';
+}
+
+/** When the schedule next flips the theme, or null when it never will. */
+export function nextThemeChange(settings, now = new Date()) {
+  const schedule = settings?.themeSchedule;
+  if (!schedule?.enabled) return null;
+  const marks = [schedule.darkFrom, schedule.lightFrom].map(minutesOf);
+  if (marks.some((mark) => mark === null) || marks[0] === marks[1]) return null;
+
+  let soonest = null;
+  for (const mark of marks) {
+    const at = new Date(now);
+    at.setHours(Math.floor(mark / 60), mark % 60, 0, 0);
+    if (at <= now) at.setDate(at.getDate() + 1);
+    if (!soonest || at < soonest) soonest = at;
+  }
+  return soonest;
+}

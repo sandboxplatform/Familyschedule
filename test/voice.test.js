@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseSpokenItems, voiceSupport, listenOnce, MAX_ITEM_LENGTH } from '../public/js/speech.js';
+import { parseSpokenItems, voiceSupport, listenForList, MAX_ITEM_LENGTH } from '../public/js/speech.js';
 
 // -- the parser -------------------------------------------------------------
 
@@ -69,12 +69,14 @@ class FakeRecognizer {
     this.onstart?.();
   }
   stop() {
+    if (this.stopped) return;
     this.stopped = true;
     this.onend?.();
   }
-  say(transcript) {
-    this.onresult?.({ results: [[{ transcript }]] });
-    this.onend?.();
+  /** Results as [transcript, isFinal] pairs, the way a continuous recogniser reports them. */
+  hear(results, resultIndex = 0) {
+    const list = results.map(([transcript, isFinal]) => Object.assign([{ transcript }], { isFinal }));
+    this.onresult?.({ results: list, resultIndex });
   }
   fail(error) {
     this.onerror?.({ error });
@@ -101,30 +103,72 @@ test('a secure page with a recogniser gets the mic, prefixed or not', () => {
   assert.equal(voiceSupport({ webkitSpeechRecognition: FakeRecognizer, isSecureContext: true }).available, true);
 });
 
-test('listening once hands back parsed items and then ends', () => {
+test('a list said with pauses becomes one item per pause, and the mic keeps listening', async () => {
   const env = { SpeechRecognition: FakeRecognizer, isSecureContext: true, navigator: { language: 'en-GB' } };
-  const calls = [];
-  listenOnce(
+  const updates = [];
+  let done = null;
+  listenForList(
     {
-      onStart: () => calls.push('start'),
-      onItems: (items) => calls.push(items),
-      onError: (message) => calls.push(`error: ${message}`),
-      onEnd: () => calls.push('end'),
+      onUpdate: (items) => updates.push(items),
+      onDone: (items) => {
+        done = items;
+      },
     },
     env,
   );
   const recognizer = FakeRecognizer.last;
-  assert.equal(recognizer.started, true);
-  assert.equal(recognizer.lang, 'en-GB');
-  assert.equal(recognizer.continuous, false);
-  recognizer.say('add bananas and tin foil');
-  assert.deepEqual(calls, ['start', ['Bananas', 'Tin foil'], 'end']);
+  assert.equal(recognizer.continuous, true, 'must not stop at the first pause');
+  assert.equal(recognizer.interimResults, true);
+
+  recognizer.hear([['milk', true]]);
+  recognizer.hear([['milk', true], ['coffee', false]]);
+  recognizer.hear([['milk', true], ['coffee beans', true]], 1);
+  recognizer.hear([['milk', true], ['coffee beans', true], ['tin foil', true]], 2);
+  recognizer.stop();
+
+  assert.deepEqual(updates[0], ['Milk']);
+  assert.deepEqual(updates[1], ['Milk', 'Coffee'], 'interim words show as they come');
+  assert.deepEqual(done, ['Milk', 'Coffee beans', 'Tin foil']);
+});
+
+test('a run said without pauses is split into the items it is made of', () => {
+  const env = { SpeechRecognition: FakeRecognizer, isSecureContext: true };
+  let done = null;
+  listenForList({ onDone: (items) => { done = items; } }, env);
+  FakeRecognizer.last.hear([['add milk eggs bread coffee beans and tin foil', true]]);
+  FakeRecognizer.last.stop();
+  assert.deepEqual(done, ['Milk', 'Eggs', 'Bread', 'Coffee beans', 'Tin foil']);
+});
+
+test('a recogniser that repeats the whole transcript as each final is not doubled', () => {
+  const env = { SpeechRecognition: FakeRecognizer, isSecureContext: true };
+  let done = null;
+  listenForList({ onDone: (items) => { done = items; } }, env);
+  const r = FakeRecognizer.last;
+  r.hear([['milk', true]]);
+  r.hear([['milk', true], ['milk eggs', true]], 1);
+  r.hear([['milk', true], ['milk eggs', true], ['milk eggs bread', true]], 2);
+  r.stop();
+  assert.deepEqual(done, ['Milk', 'Eggs', 'Bread']);
+});
+
+test('a pause long enough after speaking stops listening by itself', async () => {
+  const env = { SpeechRecognition: FakeRecognizer, isSecureContext: true };
+  let ended = false;
+  listenForList({ silenceMs: 30, onEnd: () => { ended = true; } }, env);
+  const r = FakeRecognizer.last;
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(r.stopped, false, 'silence before anything is said is left to the recogniser');
+  r.hear([['milk', true]]);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(r.stopped, true);
+  assert.equal(ended, true);
 });
 
 test('a refused microphone becomes something sayable, and still ends once', () => {
   const env = { SpeechRecognition: FakeRecognizer, isSecureContext: true };
   const calls = [];
-  listenOnce({ onError: (m) => calls.push(m), onEnd: () => calls.push('end') }, env);
+  listenForList({ onError: (m) => calls.push(m), onEnd: () => calls.push('end') }, env);
   FakeRecognizer.last.fail('not-allowed');
   assert.equal(calls.length, 2);
   assert.match(calls[0], /refused/);
@@ -134,7 +178,7 @@ test('a refused microphone becomes something sayable, and still ends once', () =
 test('stopping early is quiet: no error, just the end', () => {
   const env = { SpeechRecognition: FakeRecognizer, isSecureContext: true };
   const calls = [];
-  const stop = listenOnce({ onError: (m) => calls.push(m), onEnd: () => calls.push('end') }, env);
+  const stop = listenForList({ onError: (m) => calls.push(m), onEnd: () => calls.push('end') }, env);
   FakeRecognizer.last.onerror({ error: 'aborted' });
   stop();
   assert.deepEqual(calls, ['end']);
@@ -142,7 +186,7 @@ test('stopping early is quiet: no error, just the end', () => {
 
 test('where voice cannot work, listening reports why without throwing', () => {
   const calls = [];
-  listenOnce({ onError: (m) => calls.push(m), onEnd: () => calls.push('end') }, { isSecureContext: false });
+  listenForList({ onError: (m) => calls.push(m), onEnd: () => calls.push('end') }, { isSecureContext: false });
   assert.equal(calls.length, 2);
   assert.equal(calls[1], 'end');
 });
