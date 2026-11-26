@@ -391,8 +391,24 @@ body {
   color: var(--danger);
 }
 
-#clearPicked {
-  margin-top: var(--space-2);
+.grocery-tools {
+  display: flex;
+  gap: var(--space-2);
+  margin: calc(var(--space-2) * -1) 0 var(--space-3);
+}
+
+.grocery-tools .btn {
+  flex: 1;
+  min-height: 2.5rem;
+  font-size: 0.9rem;
+}
+
+.grocery-tools .btn:disabled {
+  opacity: 0.45;
+}
+
+.grocery-tools .btn-quiet-danger {
+  color: var(--danger);
 }
 
 /* -- forms ---------------------------------------------------------------- */

@@ -157,8 +157,8 @@ async function handleApi(req, res, url, ctx) {
     return;
   }
 
-  // The shopping list. DELETE on the collection clears what has been picked,
-  // which is the only bulk thing anybody does to it.
+  // The shopping list. DELETE on the collection clears what has been ticked,
+  // or, with ?all=1, everything on it.
   if (segments[0] === 'groceries') {
     if (segments.length === 1 && method === 'GET') {
       sendJson(res, 200, { groceries: store.groceries });
@@ -172,7 +172,9 @@ async function handleApi(req, res, url, ctx) {
       return;
     }
     if (segments.length === 1 && method === 'DELETE') {
-      sendJson(res, 200, { removed: store.clearPickedGroceries() });
+      const everything = url.searchParams.get('all') === '1';
+      const removed = everything ? store.clearAllGroceries() : store.clearPickedGroceries();
+      sendJson(res, 200, { removed });
       return;
     }
     if (segments.length === 2 && (method === 'PATCH' || method === 'PUT')) {
