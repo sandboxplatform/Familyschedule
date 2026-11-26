@@ -316,3 +316,34 @@ test('the list is closed to anybody not signed in', async () => {
     );
   });
 });
+
+test('clearing everything empties the list, ticked or not', async () => {
+  const { store, file } = await tempStore();
+  const a = store.addGroceryItem({ name: 'Apples' }).item;
+  store.addGroceryItem({ name: 'Bananas' });
+  store.updateGroceryItem(a.id, { checked: true });
+  assert.equal(store.clearAllGroceries(), 2);
+  assert.deepEqual(store.groceries, []);
+  assert.equal(store.clearAllGroceries(), 0);
+  await store.close();
+
+  const reopened = new Store(openDatabase(file));
+  await reopened.load();
+  assert.deepEqual(reopened.groceries, []);
+  await reopened.close();
+});
+
+test('over HTTP, ?all=1 clears everything and plain DELETE only the ticked', async () => {
+  await withServer(async ({ call, anonymous }) => {
+    const milk = (await call('/api/groceries', { method: 'POST', body: { name: 'Milk' } })).body.item;
+    await call('/api/groceries', { method: 'POST', body: { name: 'Eggs' } });
+    await call(`/api/groceries/${milk.id}`, { method: 'PATCH', body: { checked: true } });
+
+    assert.equal((await call('/api/groceries', { method: 'DELETE' })).body.removed, 1);
+    assert.deepEqual((await call('/api/groceries')).body.groceries.map((g) => g.name), ['Eggs']);
+
+    assert.equal((await anonymous('/api/groceries?all=1', { method: 'DELETE' })).status, 401);
+    assert.equal((await call('/api/groceries?all=1', { method: 'DELETE' })).body.removed, 1);
+    assert.deepEqual((await call('/api/groceries')).body.groceries, []);
+  });
+});

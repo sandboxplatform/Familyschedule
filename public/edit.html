@@ -54,13 +54,12 @@
       <p class="hint grocery-preview" id="groceryPreview" hidden aria-live="polite"></p>
       <p class="hint voice-hint" id="voiceHint" hidden></p>
 
-      <div id="groceryOpen"></div>
-
-      <div id="groceryPickedWrap" hidden>
-        <div class="section-title"><h2>In the trolley</h2></div>
-        <div id="groceryPicked"></div>
-        <button class="btn btn-ghost btn-block" id="clearPicked" type="button"></button>
+      <div class="grocery-tools" id="groceryTools" hidden>
+        <button class="btn btn-ghost" id="clearPicked" type="button"></button>
+        <button class="btn btn-ghost btn-quiet-danger" id="clearAll" type="button">Clear all</button>
       </div>
+
+      <div id="groceryList"></div>
     </section>
 
     <!-- People --------------------------------------------------------- -->

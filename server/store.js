@@ -324,6 +324,14 @@ export class Store extends EventEmitter {
     this.#commit('groceries');
   }
 
+  /** Empties the list, ticked or not. Returns how many went. */
+  clearAllGroceries() {
+    const removed = this.#state.groceries.length;
+    this.#state.groceries = [];
+    if (removed) this.#commit('groceries');
+    return removed;
+  }
+
   /** Drops everything already in the trolley. Returns how many went. */
   clearPickedGroceries() {
     const before = this.#state.groceries.length;

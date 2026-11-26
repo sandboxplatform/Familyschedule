@@ -48,6 +48,7 @@ export const api = {
   updateGrocery: (id, item) => request(`/api/groceries/${id}`, { method: 'PATCH', body: item }),
   deleteGrocery: (id) => request(`/api/groceries/${id}`, { method: 'DELETE' }),
   clearPickedGroceries: () => request('/api/groceries', { method: 'DELETE' }),
+  clearAllGroceries: () => request('/api/groceries?all=1', { method: 'DELETE' }),
 
   updateSettings: (settings) => request('/api/settings', { method: 'PATCH', body: settings }),
 

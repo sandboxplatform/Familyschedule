@@ -541,37 +541,32 @@ function setGroceries(list) {
 }
 
 /**
- * Two lists: what is still to get, in the order it was asked for, and what is
- * already in the trolley, in the order it went in — so neither reshuffles while
- * somebody is working down it.
+ * One list, in the order things were asked for. Ticking something strikes it
+ * through where it is rather than moving it, so nothing shifts under a thumb
+ * halfway down the list; the clear buttons above take the ticked ones away.
  */
 function renderGroceries() {
-  const open = state.groceries
-    .filter((item) => !item.checked)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const picked = state.groceries
-    .filter((item) => item.checked)
-    .sort((a, b) => (a.checkedAt || '').localeCompare(b.checkedAt || ''));
+  const all = [...state.groceries].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const open = all.filter((item) => !item.checked);
+  const picked = all.filter((item) => item.checked);
 
-  const openList = $('groceryOpen');
-  if (open.length) {
-    openList.replaceChildren(...open.map(groceryRow));
+  const list = $('groceryList');
+  if (all.length) {
+    list.replaceChildren(...all.map(groceryRow));
   } else {
     const blank = document.createElement('div');
     blank.className = 'blank';
     const big = document.createElement('span');
     big.className = 'big';
     big.textContent = '🛒';
-    blank.append(
-      big,
-      document.createTextNode(picked.length ? 'Everything is in the trolley.' : 'Nothing on the list.'),
-    );
-    openList.replaceChildren(blank);
+    blank.append(big, document.createTextNode('Nothing on the list.'));
+    list.replaceChildren(blank);
   }
 
-  $('groceryPickedWrap').hidden = !picked.length;
-  $('groceryPicked').replaceChildren(...picked.map(groceryRow));
-  $('clearPicked').textContent = `Clear ${picked.length} picked ${picked.length === 1 ? 'item' : 'items'}`;
+  $('groceryTools').hidden = !all.length;
+  const clearPickedButton = $('clearPicked');
+  clearPickedButton.disabled = !picked.length;
+  clearPickedButton.textContent = picked.length ? `Clear ticked (${picked.length})` : 'Clear ticked';
 
   if (state.view === 'shopping') {
     ui.viewSub.textContent = open.length
@@ -784,6 +779,21 @@ async function clearPicked() {
     state.groceries = state.groceries.filter((g) => !g.checked);
     renderGroceries();
     toast(removed ? `Cleared ${removed} ${removed === 1 ? 'item' : 'items'}` : 'Nothing to clear');
+  } catch (error) {
+    toast(error.message, 'error');
+  }
+}
+
+/** Empties the list outright — after the week's shop, or to start again. */
+async function clearAllGroceries() {
+  const count = state.groceries.length;
+  if (!count) return;
+  if (!confirm(`Clear all ${count} ${count === 1 ? 'item' : 'items'} from the shopping list?`)) return;
+  try {
+    const { removed } = await api.clearAllGroceries();
+    state.groceries = [];
+    renderGroceries();
+    toast(`Cleared ${removed} ${removed === 1 ? 'item' : 'items'}`);
   } catch (error) {
     toast(error.message, 'error');
   }
@@ -1128,6 +1138,7 @@ function wire() {
   $('groceryInput').addEventListener('input', showGroceryPreview);
   $('groceryInput').addEventListener('paste', pasteIntoGroceryBox);
   $('clearPicked').addEventListener('click', clearPicked);
+  $('clearAll').addEventListener('click', clearAllGroceries);
   wireVoice();
 
   $('addPerson').addEventListener('click', () => openPerson(null));
