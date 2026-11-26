@@ -6,7 +6,7 @@
  * few minutes so a static screen cannot ghost the panel.
  */
 
-import { api, subscribe } from './api.js';
+import { api, buildWatcher, subscribe } from './api.js';
 import {
   addDays,
   categoryMeta,
@@ -108,9 +108,18 @@ async function boot() {
   el.editUrl.textContent = `${location.host}/edit`;
   await refresh();
 
+  // A wall display is never reloaded by hand, so after a deploy it would run
+  // the old script indefinitely — against a server and a page that have both
+  // moved on. When the stream comes back reporting a different build, reload.
+  // A moment's pause lets the new server finish starting.
+  const noticeBuild = buildWatcher(() => {
+    setTimeout(() => location.reload(), 2000 + Math.random() * 3000);
+  });
+
   subscribe({
     onChange: () => scheduleRefresh(250),
     onStatus: (status) => el.status.setAttribute('data-state', status),
+    onHello: (hello) => noticeBuild(hello.build),
   });
 
   setInterval(tick, 1000);
@@ -635,7 +644,10 @@ function shownWeekStart() {
 function dayColumn(day) {
   const section = document.createElement('div');
   section.className = 'day-col fade-in';
-  if (day.date === state.today) section.classList.add('is-today');
+  if (day.date === state.today) {
+    section.classList.add('is-today');
+    section.setAttribute('aria-current', 'date');
+  }
   else if (day.date < state.today) section.classList.add('is-past');
   const weekday = weekdayIndex(day.date);
   if (weekday === 0 || weekday === 6) section.classList.add('is-weekend');
@@ -644,7 +656,9 @@ function dayColumn(day) {
   head.className = 'day-head';
   const name = document.createElement('span');
   name.className = 'name';
-  name.textContent = day.date === state.today ? 'Today' : dayName(day.date, 'short');
+  // Today keeps its weekday and is picked out by colour instead: "Today" is
+  // wider than a weekday and crowded the date on narrow columns.
+  name.textContent = dayName(day.date, 'short');
   const num = document.createElement('span');
   num.className = 'num';
   num.textContent = String(Number(day.date.slice(8)));

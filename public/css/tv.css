@@ -567,6 +567,19 @@ body.show-cursor .is-day-target {
   color: var(--accent);
 }
 
+/* Today is a filled badge on its weekday, not the word "Today" — different
+   from a weekend's blue lettering, and no wider than any other day. */
+.day-col.is-today .day-head .name {
+  padding: 0.1em 0.45em 0.1em 0.55em;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--surface-solid);
+}
+
+.day-col.is-today .day-head .num {
+  color: var(--accent);
+}
+
 .day-head {
   display: flex;
   align-items: baseline;

@@ -55,18 +55,50 @@ export const api = {
 };
 
 /**
+ * Watches the build the server reports on each (re)connection and calls
+ * `onNewBuild` once, the first time it differs from the build this page
+ * started with. A deploy restarts the server, so every screen reconnects and
+ * hears about it within seconds; a restart that ships nothing new reports the
+ * same build and changes nothing.
+ */
+export function buildWatcher(onNewBuild) {
+  let first = null;
+  let fired = false;
+  return (build) => {
+    if (typeof build !== 'string' || !build) return false;
+    if (first === null) {
+      first = build;
+      return false;
+    }
+    if (build === first || fired) return false;
+    fired = true;
+    onNewBuild(build);
+    return true;
+  };
+}
+
+/**
  * Subscribes to server-sent changes. EventSource reconnects on its own, so we
  * only surface online/offline transitions to the caller — the TV uses that to
  * show a quiet "reconnecting" dot rather than a broken screen.
  */
-export function subscribe({ onChange, onStatus }) {
+export function subscribe({ onChange, onStatus, onHello }) {
   let source;
   let closed = false;
 
   const connect = () => {
     if (closed) return;
     source = new EventSource('/api/stream');
-    source.addEventListener('hello', () => onStatus?.('live'));
+    source.addEventListener('hello', (event) => {
+      onStatus?.('live');
+      let detail = {};
+      try {
+        detail = JSON.parse(event.data);
+      } catch {
+        // An old server's greeting carries nothing to compare.
+      }
+      onHello?.(detail);
+    });
     source.addEventListener('change', (event) => {
       let detail = {};
       try {
