@@ -6,3 +6,5 @@ data/*.bak
 *.log
 .env
 .env.local
+data/*.db
+data/*.db-*

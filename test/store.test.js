@@ -23,7 +23,7 @@ test('a fresh store starts empty and creates its database', async () => {
     .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
     .map((row) => row.name);
-  assert.deepEqual(tables, ['event_members', 'events', 'members', 'meta', 'settings', 'users']);
+  assert.deepEqual(tables, ['event_members', 'events', 'groceries', 'members', 'meta', 'settings', 'users']);
   await store.close();
   await fs.access(file);
 });

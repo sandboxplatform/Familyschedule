@@ -34,6 +34,34 @@
       <div id="agenda"></div>
     </section>
 
+    <!-- Shopping ------------------------------------------------------- -->
+    <section class="view" id="view-shopping" aria-label="Shopping list">
+      <form class="grocery-add" id="groceryForm" novalidate autocomplete="off">
+        <label class="sr-only" for="groceryInput">Add to the list</label>
+        <input
+          type="text"
+          id="groceryInput"
+          maxlength="80"
+          placeholder="Add milk, eggs…"
+          enterkeyhint="done"
+          autocapitalize="sentences"
+        />
+        <button class="btn btn-primary" type="submit">Add</button>
+        <button class="btn mic-btn" type="button" id="micButton" hidden aria-label="Add by voice" title="Add by voice">
+          🎤
+        </button>
+      </form>
+      <p class="hint voice-hint" id="voiceHint" hidden></p>
+
+      <div id="groceryOpen"></div>
+
+      <div id="groceryPickedWrap" hidden>
+        <div class="section-title"><h2>In the trolley</h2></div>
+        <div id="groceryPicked"></div>
+        <button class="btn btn-ghost btn-block" id="clearPicked" type="button"></button>
+      </div>
+    </section>
+
     <!-- People --------------------------------------------------------- -->
     <section class="view" id="view-people" aria-label="People">
       <div class="section-title"><h2>Everyone in the house</h2></div>
@@ -192,6 +220,9 @@
   <nav class="tabbar" role="tablist" aria-label="Sections">
     <button class="tab" type="button" role="tab" data-view="schedule" aria-selected="true">
       <span class="glyph">🗓️</span>Schedule
+    </button>
+    <button class="tab" type="button" role="tab" data-view="shopping" aria-selected="false">
+      <span class="glyph">🛒</span>Shopping
     </button>
     <button class="tab" type="button" role="tab" data-view="people" aria-selected="false">
       <span class="glyph">👥</span>People

@@ -69,6 +69,21 @@ CREATE TABLE IF NOT EXISTS event_members (
   PRIMARY KEY (event_id, member_id)
 );
 
+-- The household's shopping list. A table of its own beside events rather than
+-- a setting, so two phones ticking things off in the same shop each touch one
+-- row. Who asked for something is remembered loosely: removing that person
+-- leaves the item on the list, just unattributed.
+CREATE TABLE IF NOT EXISTS groceries (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  note       TEXT NOT NULL DEFAULT '',
+  checked    INTEGER NOT NULL DEFAULT 0,
+  checked_at TEXT,
+  added_by   TEXT REFERENCES members(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS events_by_date      ON events(date);
 CREATE INDEX IF NOT EXISTS event_members_by_member ON event_members(member_id);
 `;
@@ -173,6 +188,22 @@ export function readEvents(db) {
     }));
 }
 
+export function readGroceries(db) {
+  return db
+    .prepare('SELECT * FROM groceries ORDER BY created_at, rowid')
+    .all()
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      note: row.note,
+      checked: Boolean(row.checked),
+      checkedAt: row.checked_at,
+      addedBy: row.added_by,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+}
+
 // -- writing ---------------------------------------------------------------
 
 export function writeSettings(db, settings) {
@@ -242,6 +273,37 @@ export function writeEvents(db, events) {
     );
     clearMembers.run(event.id);
     for (const memberId of event.memberIds ?? []) addMember.run(event.id, memberId);
+  }
+}
+
+export function writeGroceries(db, groceries) {
+  const keep = new Set(groceries.map((g) => g.id));
+  for (const row of db.prepare('SELECT id FROM groceries').all()) {
+    if (!keep.has(row.id)) db.prepare('DELETE FROM groceries WHERE id = ?').run(row.id);
+  }
+
+  // An id that names a member who no longer exists is dropped here rather than
+  // left for the foreign key to refuse the whole write.
+  const members = new Set(db.prepare('SELECT id FROM members').all().map((row) => row.id));
+  const statement = db.prepare(`
+    INSERT INTO groceries(id, name, note, checked, checked_at, added_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name, note = excluded.note, checked = excluded.checked,
+      checked_at = excluded.checked_at, added_by = excluded.added_by,
+      updated_at = excluded.updated_at
+  `);
+  for (const item of groceries) {
+    statement.run(
+      item.id,
+      item.name,
+      item.note ?? '',
+      item.checked ? 1 : 0,
+      item.checkedAt ?? null,
+      item.addedBy && members.has(item.addedBy) ? item.addedBy : null,
+      item.createdAt,
+      item.updatedAt,
+    );
   }
 }
 

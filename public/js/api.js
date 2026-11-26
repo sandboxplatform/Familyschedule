@@ -43,6 +43,12 @@ export const api = {
   updateMember: (id, member) => request(`/api/members/${id}`, { method: 'PATCH', body: member }),
   deleteMember: (id) => request(`/api/members/${id}`, { method: 'DELETE' }),
 
+  listGroceries: () => request('/api/groceries'),
+  addGrocery: (item) => request('/api/groceries', { method: 'POST', body: item }),
+  updateGrocery: (id, item) => request(`/api/groceries/${id}`, { method: 'PATCH', body: item }),
+  deleteGrocery: (id) => request(`/api/groceries/${id}`, { method: 'DELETE' }),
+  clearPickedGroceries: () => request('/api/groceries', { method: 'DELETE' }),
+
   updateSettings: (settings) => request('/api/settings', { method: 'PATCH', body: settings }),
 
   signOut: () => request('/api/session', { method: 'DELETE' }),
