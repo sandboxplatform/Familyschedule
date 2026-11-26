@@ -154,6 +154,112 @@ body.show-cursor {
   grid-template-columns: minmax(20rem, 0.82fr) minmax(0, 2fr);
 }
 
+/* With something on the shopping list, it takes a narrow column of its own at
+   the right of every view, so the list and the calendar share one screen. */
+.tv-main {
+  --shopping-col: minmax(11rem, 0.42fr);
+}
+
+.tv-main.has-shopping,
+.tv-main.has-shopping[data-mode='day'] {
+  grid-template-columns: minmax(18rem, 0.78fr) minmax(0, 2fr) var(--shopping-col);
+}
+
+.tv-main.has-shopping[data-mode='week'],
+.tv-main.has-shopping[data-mode='month'] {
+  grid-template-columns: minmax(0, 1fr) var(--shopping-col);
+}
+
+/* -- shopping column ------------------------------------------------------ */
+
+.shopping-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-5) var(--space-4);
+  box-shadow: var(--shadow);
+}
+
+.shopping-col[hidden] {
+  display: none;
+}
+
+.shopping-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.shopping-head h2 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.shopping-count {
+  min-width: 1.6rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.shopping-items {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+
+.shopping-items li {
+  position: relative;
+  padding: 0.4rem 0 0.4rem 1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.shopping-items li::before {
+  content: '';
+  position: absolute;
+  left: 0.1rem;
+  top: 0.85rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.shopping-items li:last-child {
+  border-bottom: none;
+}
+
+.shopping-items li.more {
+  padding-left: 0;
+  border-bottom: none;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+
+.shopping-items li.more::before {
+  display: none;
+}
+
 /* -- today panel ---------------------------------------------------------- */
 
 .today-panel {
@@ -211,40 +317,6 @@ body.show-cursor {
 }
 
 .who-row.is-free .who-what {
-  color: var(--text-faint);
-}
-
-/* The shopping list, read-only: what is still to get, for whoever is heading
-   out. Hidden by the script when nothing is left on it. */
-.shopping-strip {
-  flex: none;
-  display: grid;
-  gap: var(--space-2);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--line);
-}
-
-.shopping-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.shopping-items li {
-  padding: 0.2em 0.65em;
-  border-radius: var(--radius-pill);
-  background: var(--surface-strong);
-  border: 1px solid var(--line);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.shopping-items li.more {
-  background: none;
-  border-color: transparent;
   color: var(--text-faint);
 }
 
@@ -694,9 +766,17 @@ body.show-cursor .is-day-target {
 
 .timeline-inner {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--space-4);
   min-height: 0;
+}
+
+/* The all-day strip gets a row above the rail only when there is one. With
+   the two-row template always on, a day without all-day entries put the rail
+   in the auto-sized first row, where it collapsed to its border: a blank day
+   view with the events nowhere to be seen. */
+.timeline-inner.has-all-day {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .all-day-strip {
@@ -1057,6 +1137,48 @@ body.show-cursor .is-day-target {
   .month-pill small {
     display: none;
   }
+
+  /* Stacked, the list becomes a strip between today and the calendar. */
+  .tv-main.has-shopping,
+  .tv-main.has-shopping[data-mode] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .tv-main.has-shopping[data-mode='week'],
+  .tv-main.has-shopping[data-mode='month'] {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .shopping-col {
+    order: 1;
+    padding: var(--space-3) var(--space-4);
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .board-wrap,
+  .timeline-wrap,
+  .month {
+    order: 2;
+  }
+  .shopping-items {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    overflow: visible;
+  }
+  .shopping-items li {
+    padding: 0.2em 0.65em;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: var(--surface-strong);
+    font-size: 0.85rem;
+  }
+  .shopping-items li:last-child {
+    border-bottom: 1px solid var(--line);
+  }
+  .shopping-items li::before {
+    display: none;
+  }
 }
 
 /* -- phones ---------------------------------------------------------------
@@ -1116,9 +1238,16 @@ body.show-cursor .is-day-target {
   /* Panels size to their content and the page scrolls, rather than each one
      fighting for a slice of a viewport that is never tall enough. */
   .tv-main,
-  .tv-main[data-mode='day'] {
+  .tv-main[data-mode='day'],
+  .tv-main.has-shopping,
+  .tv-main.has-shopping[data-mode],
+  .tv-main.has-shopping[data-mode='week'],
+  .tv-main.has-shopping[data-mode='month'] {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto;
+    /* Rows hug their content; spare height stays below rather than being
+       shared out as empty space inside each panel. */
+    align-content: start;
     gap: var(--space-4);
   }
 

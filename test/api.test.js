@@ -312,3 +312,15 @@ test('oversized bodies are rejected', async () => {
     assert.equal(status, 413);
   });
 });
+
+test('scripts and styles revalidate, so a redeploy reaches every screen', async () => {
+  await withServer(async ({ base, cookie }) => {
+    for (const asset of ['/js/tv.js', '/css/tv.css', '/']) {
+      const response = await fetch(`${base}${asset}`, { headers: { Cookie: cookie } });
+      assert.equal(response.status, 200, asset);
+      assert.equal(response.headers.get('cache-control'), 'no-cache', asset);
+      assert.ok(response.headers.get('etag'), asset);
+      await response.arrayBuffer();
+    }
+  });
+});
