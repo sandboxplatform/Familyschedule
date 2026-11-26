@@ -105,6 +105,27 @@
       </div>
 
       <div class="field">
+        <button class="toggle" id="themeScheduleToggle" type="button" aria-pressed="false">
+          <span>Dark in the evening, light in the morning</span>
+          <span class="switch" aria-checked="false"></span>
+        </button>
+      </div>
+
+      <div class="field-row" id="themeScheduleFields" hidden>
+        <div class="field">
+          <label for="darkFromInput">Dark from</label>
+          <select id="darkFromInput"></select>
+        </div>
+        <div class="field">
+          <label for="lightFromInput">Light from</label>
+          <select id="lightFromInput"></select>
+        </div>
+      </div>
+      <p class="hint" id="themeScheduleHint" hidden style="margin: -0.5rem 0 1rem">
+        Each screen follows its own clock. The Theme above is used when this is off.
+      </p>
+
+      <div class="field">
         <button class="toggle" id="openRegistrationToggle" type="button" aria-pressed="false">
           <span>Anyone with the address can sign up</span>
           <span class="switch" aria-checked="false"></span>

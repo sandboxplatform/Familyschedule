@@ -71,6 +71,9 @@ export function defaultSettings() {
     familyName: 'Our Family',
     weekStart: 1,
     theme: 'midnight',
+    // Dark in the evening, light in the morning, by each screen's own clock.
+    // On unless the household turns it off; `theme` applies when it is off.
+    themeSchedule: { enabled: true, darkFrom: '19:00', lightFrom: '07:00' },
     defaultView: 'agenda',
     openRegistration: true,
     clock24h: false,
@@ -516,11 +519,17 @@ function validateRecurrence(recurrence, date) {
 export function validateSettings(input) {
   const base = defaultSettings();
   const weather = { ...base.weather, ...(input?.weather || {}) };
+  const schedule = { ...base.themeSchedule, ...(input?.themeSchedule || {}) };
 
   return {
     familyName: text(input?.familyName, 'familyName', { max: 40 }) || base.familyName,
     weekStart: input?.weekStart === 0 ? 0 : 1,
     theme: ['midnight', 'daylight'].includes(input?.theme) ? input.theme : base.theme,
+    themeSchedule: {
+      enabled: Boolean(schedule.enabled),
+      darkFrom: isTimeKey(schedule.darkFrom) ? schedule.darkFrom : base.themeSchedule.darkFrom,
+      lightFrom: isTimeKey(schedule.lightFrom) ? schedule.lightFrom : base.themeSchedule.lightFrom,
+    },
     defaultView: ['agenda', 'day', 'week', 'month'].includes(input?.defaultView)
       ? input.defaultView
       : base.defaultView,

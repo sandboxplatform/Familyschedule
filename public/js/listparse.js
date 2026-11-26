@@ -7,6 +7,8 @@
  * No DOM and nothing at import time, so the tests can load it in node.
  */
 
+import { splitRunOn } from './grocery-words.js';
+
 /** Matches GROCERY_NAME_MAX on the server; a longer item would be refused. */
 export const MAX_ITEM_LENGTH = 80;
 
@@ -110,7 +112,9 @@ const KEPT_AND = '\u0000';
  * - Strips bullets and numbering ("- milk", "• eggs", "2. bread"), a leading
  *   "and" left by "milk, eggs, and bread", and trailing full stops.
  * - Spoken input also loses its lead-in ("can you add …"), its tail ("… to
- *   the list"), a leading "some"/"a"/"an", and the dictated word "comma".
+ *   the list"), a leading "some"/"a"/"an", and the dictated word "comma"; and
+ *   a run said without separators is split where every word is a known
+ *   grocery item (see grocery-words.js).
  * - Drops repeats, whatever their case, and anything that is only filler.
  * - Clamps each item to what the store accepts, and capitalises one written
  *   all in lower case — "milk" becomes "Milk", "iPad charger" is left alone.
@@ -144,23 +148,27 @@ export function splitItems(input, { spoken = false, max = MAX_ITEM_LENGTH } = {}
       .replace(/^(?:and|&|plus)\s+/i, '')
       .trim();
     if (spoken) item = stripEdges(item).replace(/^(?:some|a|an)\s+/i, '');
-    item = item
-      .replace(/[.!?:]+$/g, '')
-      .split(KEPT_AND)
-      .join('and')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!item || FILLER.has(item.toLowerCase())) continue;
+    item = item.replace(/[.!?:]+$/g, '').replace(/\s+/g, ' ').trim();
 
-    item = item.slice(0, max).trim();
-    if (item === item.toLocaleLowerCase()) {
-      item = item.charAt(0).toLocaleUpperCase() + item.slice(1);
+    // Speech rarely comes with commas: "milk eggs bread coffee beans" is one
+    // run of words. Split it where every word is a known item; leave it whole
+    // where anything is not, rather than guess.
+    const pieces = spoken ? splitRunOn(item.split(KEPT_AND).join('and')) || [item] : [item];
+
+    for (let piece of pieces) {
+      piece = piece.split(KEPT_AND).join('and').replace(/\s+/g, ' ').trim();
+      if (!piece || FILLER.has(piece.toLowerCase())) continue;
+
+      piece = piece.slice(0, max).trim();
+      if (piece === piece.toLocaleLowerCase()) {
+        piece = piece.charAt(0).toLocaleUpperCase() + piece.slice(1);
+      }
+
+      const key = piece.toLocaleLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(piece);
     }
-
-    const key = item.toLocaleLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push(item);
   }
   return items;
 }

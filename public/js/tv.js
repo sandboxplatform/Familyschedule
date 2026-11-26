@@ -16,8 +16,10 @@ import {
   longDate,
   minutesOf,
   monthName,
+  nextThemeChange,
   nowMinutes,
   sameMonth,
+  scheduledTheme,
   startOfMonthKey,
   startOfWeekKey,
   todayKey,
@@ -179,7 +181,7 @@ async function load() {
   state.days = payload.days;
   state.groceries = payload.groceries || [];
 
-  applyTheme(payload.settings.theme);
+  applyTheme(currentTheme());
   el.familyName.textContent = payload.settings.familyName;
   el.todayLong.textContent = longDate(payload.today);
   return true;
@@ -1294,7 +1296,11 @@ function tick() {
   // today back under a day somebody had just opened — and on a phone, where
   // the panel is the whole of the day view, that looked like the tap had
   // done nothing.
-  if (state.settings) renderToday(state.mode === 'day' ? shownDayKey() : state.today);
+  if (state.settings) {
+    // 7pm and 7am (or whenever the household set) arrive on the minute.
+    applyTheme(currentTheme());
+    renderToday(state.mode === 'day' ? shownDayKey() : state.today);
+  }
   rotateIfDue(now);
 }
 
@@ -1464,12 +1470,35 @@ function applyTheme(theme) {
 }
 
 /**
- * The toggle writes through to settings rather than staying local, so the phone
- * and every other screen in the house follow the same theme over the live
- * stream. The switch is applied immediately and rolled back if the save fails.
+ * The theme on screen: the schedule's, unless somebody has flipped it by hand
+ * since the last scheduled change, in which case theirs holds until the next.
+ */
+let themeOverride = null;
+
+function currentTheme(now = new Date()) {
+  if (themeOverride && now < themeOverride.until) return themeOverride.theme;
+  themeOverride = null;
+  return scheduledTheme(state.settings, now);
+}
+
+/**
+ * With the schedule on, the toggle is a local "not yet": it flips this screen
+ * until the next scheduled change, and leaves the household setting alone.
+ *
+ * With it off, the toggle writes through to settings rather than staying
+ * local, so the phone and every other screen in the house follow the same
+ * theme over the live stream. The switch is applied immediately and rolled
+ * back if the save fails.
  */
 async function toggleTheme() {
   if (!state.settings) return;
+  if (state.settings.themeSchedule?.enabled) {
+    const until = nextThemeChange(state.settings);
+    const next = currentTheme() === 'daylight' ? 'midnight' : 'daylight';
+    themeOverride = until ? { theme: next, until } : null;
+    applyTheme(next);
+    return;
+  }
   const previous = state.settings.theme;
   const next = previous === 'daylight' ? 'midnight' : 'daylight';
 

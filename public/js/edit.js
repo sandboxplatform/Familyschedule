@@ -9,7 +9,7 @@
 
 import { api, subscribe } from './api.js';
 import { createTimePicker } from './timepicker.js';
-import { listenOnce, voiceSupport } from './speech.js';
+import { listenForList, voiceSupport } from './speech.js';
 import { splitItems } from './listparse.js';
 import {
   addDays,
@@ -19,6 +19,7 @@ import {
   formatTime,
   initials,
   relativeDay,
+  scheduledTheme,
   todayKey,
   weekdayIndex,
   WEEKDAYS,
@@ -115,7 +116,7 @@ function applyBootstrap({ settings, members, categories, palette, user, storage 
   showStorageWarning(storage);
   form.start?.setClock(settings.clock24h);
   form.end?.setClock(settings.clock24h);
-  ui.root.dataset.theme = settings.theme;
+  applyTheme();
   $('signOut').hidden = false;
   $('signedInAs').textContent = state.user ? state.user.email : '';
   renderPeople();
@@ -148,7 +149,7 @@ async function loadAgenda(from) {
   if (id !== agendaRequest) return;
   state.days = payload.days;
   state.settings = payload.settings;
-  ui.root.dataset.theme = payload.settings.theme;
+  applyTheme();
   setGroceries(payload.groceries || []);
   renderAgenda();
 }
@@ -815,24 +816,50 @@ function wireVoice() {
   hint.textContent = support.available ? '' : support.message;
   if (!support.available) return;
 
+  /*
+   * A whole list in one go: the mic keeps listening through pauses, each
+   * pause ends an item, and what it hears fills the box as it goes. When the
+   * talking stops it waits in the box with the preview of what will be added,
+   * so a mishearing can be fixed before anything lands on the list.
+   */
+  const input = $('groceryInput');
+  let typedBefore = '';
+
+  const show = (items) => {
+    const heard = items.join(', ');
+    input.value = typedBefore ? `${typedBefore}, ${heard}` : heard;
+    showGroceryPreview();
+  };
+
   button.addEventListener('click', () => {
     if (stopListening) {
       stopListening();
       return;
     }
+    typedBefore = input.value.trim().replace(/[,;]\s*$/, '');
     button.classList.add('is-listening');
     button.setAttribute('aria-label', 'Stop listening');
-    toast('Listening — say what you need');
-    stopListening = listenOnce({
-      onItems: (items) => {
-        if (items.length) addGroceries(items);
-        else toast('Didn’t hear anything to add', 'error');
+    hint.hidden = false;
+    hint.textContent = 'Listening — say each thing, with a pause between. Tap the mic when you’re done.';
+    stopListening = listenForList({
+      onUpdate: (items) => {
+        if (items.length) show(items);
+      },
+      onDone: (items) => {
+        if (!items.length) {
+          toast('Didn’t hear anything to add', 'error');
+          return;
+        }
+        show(items);
+        toast(`Heard ${items.length} ${items.length === 1 ? 'item' : 'items'} — check them, then tap Add`);
       },
       onError: (message) => toast(message, 'error'),
       onEnd: () => {
         stopListening = null;
         button.classList.remove('is-listening');
         button.setAttribute('aria-label', 'Add by voice');
+        hint.hidden = true;
+        hint.textContent = '';
       },
     }, window);
   });
@@ -943,6 +970,10 @@ function fillSettings() {
   const s = state.settings;
   $('familyNameInput').value = s.familyName;
   $('themeInput').value = s.theme;
+  fillHourSelect($('darkFromInput'), s.themeSchedule.darkFrom, s.clock24h);
+  fillHourSelect($('lightFromInput'), s.themeSchedule.lightFrom, s.clock24h);
+  setToggle($('themeScheduleToggle'), s.themeSchedule.enabled);
+  showThemeScheduleFields(s.themeSchedule.enabled);
   $('weekStartInput').value = String(s.weekStart);
   $('defaultViewInput').value = s.defaultView;
   $('rotateInput').value = String(s.rotateSeconds);
@@ -962,6 +993,11 @@ async function saveSettings() {
   const payload = {
     familyName: $('familyNameInput').value,
     theme: $('themeInput').value,
+    themeSchedule: {
+      enabled: $('themeScheduleToggle').getAttribute('aria-pressed') === 'true',
+      darkFrom: $('darkFromInput').value,
+      lightFrom: $('lightFromInput').value,
+    },
     weekStart: Number($('weekStartInput').value),
     defaultView: $('defaultViewInput').value,
     clock24h: $('clockToggle').getAttribute('aria-pressed') === 'true',
@@ -979,7 +1015,7 @@ async function saveSettings() {
   try {
     const { settings } = await api.updateSettings(payload);
     state.settings = settings;
-    ui.root.dataset.theme = settings.theme;
+    applyTheme();
     form.start?.setClock(settings.clock24h);
     form.end?.setClock(settings.clock24h);
     fillSettings();
@@ -1159,6 +1195,9 @@ function wire() {
     },
   });
   form.end = createTimePicker($('endTime'), { clock24h: state.settings?.clock24h });
+  $('themeScheduleToggle').addEventListener('click', () => {
+    showThemeScheduleFields(toggleSwitch($('themeScheduleToggle')));
+  });
   $('weatherToggle').addEventListener('click', () => {
     const on = toggleSwitch($('weatherToggle'));
     $('weatherFields').hidden = !on;
@@ -1253,6 +1292,32 @@ function closeSheets() {
   ui.eventSheet.classList.remove('is-open');
   ui.personSheet.classList.remove('is-open');
   document.body.style.overflow = '';
+}
+
+/** The theme this page should show now, by the household's schedule. */
+function applyTheme() {
+  if (state.settings) ui.root.dataset.theme = scheduledTheme(state.settings);
+}
+
+// The phone follows the schedule too, checked once a minute.
+setInterval(applyTheme, 60 * 1000);
+
+function showThemeScheduleFields(on) {
+  $('themeScheduleFields').hidden = !on;
+  $('themeScheduleHint').hidden = !on;
+}
+
+/** Hour choices for the schedule, in the household's own clock style. */
+function fillHourSelect(select, value, clock24h) {
+  const options = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    const time = `${String(hour).padStart(2, '0')}:00`;
+    options.push(new Option(formatTime(time, clock24h), time));
+  }
+  // A time saved off the hour (set through the API) stays selectable.
+  if (value && !value.endsWith(':00')) options.push(new Option(formatTime(value, clock24h), value));
+  select.replaceChildren(...options);
+  select.value = value;
 }
 
 function setToggle(button, on) {

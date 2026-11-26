@@ -65,11 +65,22 @@ const ERROR_MESSAGES = {
 };
 
 /**
- * Listens for one phrase. Calls `onItems` with the parsed items (possibly
- * none), `onError` with something sayable, and `onEnd` once either way.
- * Returns a function that stops listening early.
+ * Listens for a whole list rather than one phrase.
+ *
+ * The browser's recogniser, left to itself, stops at the first pause — so
+ * "milk… eggs… bread" used to add only milk. Here it keeps listening until
+ * the person stops talking for a few seconds or taps the mic again, and each
+ * pause marks the end of an item: speech rarely arrives with commas, but it
+ * does arrive in pause-sized pieces.
+ *
+ * `onUpdate(items, heard)` fires as words come in, interim ones included, so
+ * the screen can fill as somebody speaks; `onDone(items, heard)` fires once at
+ * the end with the final list. Returns a function that stops listening.
  */
-export function listenOnce({ onItems, onError, onEnd, onStart, lang } = {}, env = globalThis) {
+export function listenForList(
+  { onUpdate, onDone, onError, onEnd, onStart, lang, silenceMs = 2500, maxMs = 60000 } = {},
+  env = globalThis,
+) {
   const support = voiceSupport(env);
   if (!support.available) {
     onError?.(support.message);
@@ -79,23 +90,67 @@ export function listenOnce({ onItems, onError, onEnd, onStart, lang } = {}, env 
 
   const recognition = new support.Recognizer();
   recognition.lang = lang || env.navigator?.language || 'en-GB';
-  recognition.continuous = false;
-  recognition.interimResults = false;
+  recognition.continuous = true;
+  recognition.interimResults = true;
   recognition.maxAlternatives = 1;
 
+  const finals = [];
+  let interim = '';
+  let heardAnything = false;
   let finished = false;
+  const timers = env.setTimeout ? env : globalThis;
+  let silenceTimer = null;
+  const hardStop = timers.setTimeout(() => stop(), maxMs);
+
+  const snapshot = () => {
+    const pieces = interim ? [...finals, interim] : [...finals];
+    return { items: itemsFromPieces(pieces), heard: pieces.join(', ') };
+  };
+
+  const stop = () => {
+    try {
+      recognition.stop();
+    } catch {
+      // Already stopped.
+    }
+  };
+
+  // A few seconds of quiet after something has been said means the list is
+  // done; before anything has been said, the recogniser's own no-speech
+  // timeout decides.
+  const restartSilence = () => {
+    timers.clearTimeout(silenceTimer);
+    if (heardAnything) silenceTimer = timers.setTimeout(stop, silenceMs);
+  };
+
   const finish = () => {
     if (finished) return;
     finished = true;
+    timers.clearTimeout(silenceTimer);
+    timers.clearTimeout(hardStop);
+    const { items, heard } = snapshot();
+    onDone?.(items, heard);
     onEnd?.();
   };
 
   recognition.onstart = () => onStart?.();
   recognition.onresult = (event) => {
-    const said = Array.from(event.results || [])
-      .map((result) => result[0]?.transcript || '')
-      .join(' ');
-    onItems?.(parseSpokenItems(said), said);
+    interim = '';
+    const results = Array.from(event.results || []);
+    for (let index = event.resultIndex ?? 0; index < results.length; index += 1) {
+      const result = results[index];
+      const text = (result[0]?.transcript || '').trim();
+      if (!text) continue;
+      if (result.isFinal) {
+        addFinal(finals, text);
+      } else {
+        interim = interim ? `${interim} ${text}` : text;
+      }
+    }
+    heardAnything = heardAnything || finals.length > 0 || Boolean(interim);
+    restartSilence();
+    const { items, heard } = snapshot();
+    onUpdate?.(items, heard);
   };
   recognition.onerror = (event) => {
     const message = ERROR_MESSAGES[event.error];
@@ -110,11 +165,24 @@ export function listenOnce({ onItems, onError, onEnd, onStart, lang } = {}, env 
     finish();
   }
 
-  return () => {
-    try {
-      recognition.stop();
-    } catch {
-      // Already stopped.
-    }
-  };
+  return stop;
+}
+
+/**
+ * Some recognisers (Chrome on Android among them) hand back each final result
+ * as the whole transcript so far — "milk", then "milk eggs" — rather than the
+ * new part. A final that merely extends the last one replaces it.
+ */
+function addFinal(finals, text) {
+  const last = finals[finals.length - 1];
+  if (last && text.toLowerCase().startsWith(last.toLowerCase())) {
+    finals[finals.length - 1] = text;
+  } else if (!last || last.toLowerCase() !== text.toLowerCase()) {
+    finals.push(text);
+  }
+}
+
+/** Each pause-separated piece is its own item, or several if it says so. */
+export function itemsFromPieces(pieces) {
+  return parseSpokenItems(pieces.filter(Boolean).join(', '));
 }

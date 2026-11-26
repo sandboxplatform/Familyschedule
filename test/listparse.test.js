@@ -75,3 +75,31 @@ test('each item is clamped to what the store accepts', () => {
   const [long] = splitItems('x'.repeat(200));
   assert.equal(long.length, MAX_ITEM_LENGTH);
 });
+
+test('speech without commas is split where every word is a known item', () => {
+  const spoken = (text) => splitItems(text, { spoken: true });
+  assert.deepEqual(spoken('milk eggs bread coffee beans tin foil'), [
+    'Milk', 'Eggs', 'Bread', 'Coffee beans', 'Tin foil',
+  ]);
+  assert.deepEqual(spoken('olive oil washing up liquid bin bags'), ['Olive oil', 'Washing up liquid', 'Bin bags']);
+  assert.deepEqual(spoken('salt and vinegar crisps milk'), ['Salt and vinegar crisps', 'Milk']);
+  assert.deepEqual(spoken('tomatoes potatoes cherries'), ['Tomatoes', 'Potatoes', 'Cherries']);
+});
+
+test('speech with any unfamiliar word is left whole rather than guessed at', () => {
+  const spoken = (text) => splitItems(text, { spoken: true });
+  assert.deepEqual(spoken('two pints of milk'), ['Two pints of milk']);
+  assert.deepEqual(spoken('ice cream cones'), ['Ice cream cones']);
+  assert.deepEqual(spoken('birthday card for grandma'), ['Birthday card for grandma']);
+});
+
+test('known multi-word items stay together', () => {
+  const spoken = (text) => splitItems(text, { spoken: true });
+  assert.deepEqual(spoken('coffee beans'), ['Coffee beans']);
+  assert.deepEqual(spoken('chocolate chip cookies orange juice'), ['Chocolate chip cookies', 'Orange juice']);
+  assert.deepEqual(spoken('carrot cake apples'), ['Carrot cake', 'Apples']);
+});
+
+test('typed text is never split on spaces', () => {
+  assert.deepEqual(splitItems('milk eggs bread'), ['Milk eggs bread']);
+});
