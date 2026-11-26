@@ -10,6 +10,7 @@
 import { api, subscribe } from './api.js';
 import { createTimePicker } from './timepicker.js';
 import { listenOnce, voiceSupport } from './speech.js';
+import { splitItems } from './listparse.js';
 import {
   addDays,
   categoryMeta,
@@ -709,17 +710,72 @@ function listOf(names) {
 async function submitGrocery(event) {
   event.preventDefault();
   const input = $('groceryInput');
-  const name = input.value.trim();
-  if (!name) {
+  const typed = input.value;
+  // One box takes a whole list: "milk, eggs and bread" is three items.
+  const names = splitItems(typed);
+  if (!names.length) {
     input.focus();
     return;
   }
   // Cleared now, not when the server answers: in a shop people type the next
   // thing straight away, and it must not be glued onto the one still saving.
   input.value = '';
+  showGroceryPreview();
   input.focus();
-  const saved = await addGroceries([name]);
-  if (!saved && !input.value) input.value = name;
+  const saved = await addGroceries(names);
+  if (!saved && !input.value) {
+    input.value = typed;
+    showGroceryPreview();
+  }
+}
+
+/**
+ * Says what the box is about to add once it holds more than one thing, so the
+ * splitting is never a surprise — and "salt and vinegar crisps" can be seen to
+ * stay whole before it is sent.
+ */
+function showGroceryPreview() {
+  const preview = $('groceryPreview');
+  const names = splitItems($('groceryInput').value);
+  if (names.length < 2) {
+    preview.hidden = true;
+    preview.textContent = '';
+    return;
+  }
+  preview.hidden = false;
+  preview.replaceChildren(
+    document.createTextNode(`Adds ${names.length} items: `),
+    ...names.flatMap((name, index) => {
+      const chip = document.createElement('span');
+      chip.className = 'preview-item';
+      chip.textContent = name;
+      return index ? [document.createTextNode(' '), chip] : [chip];
+    }),
+  );
+}
+
+/**
+ * A list pasted from a note arrives one item per line, but a one-line box
+ * flattens new lines into spaces — "milk eggs bread", which cannot be split.
+ * The lines are joined with commas instead, so each stays an item.
+ */
+function pasteIntoGroceryBox(event) {
+  const text = event.clipboardData?.getData('text/plain');
+  if (!text || !/[\r\n]/.test(text)) return;
+  event.preventDefault();
+  const input = event.currentTarget;
+  // Tidied as it lands — bullets and numbering gone — so the box shows the
+  // names that will be added rather than the note they were copied from.
+  const joined = splitItems(text).join(', ');
+  if (!joined) return;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  const before = input.value.slice(0, start);
+  const glue = before && !/[,;]\s*$/.test(before) ? ', ' : '';
+  input.value = `${before}${glue}${joined}${input.value.slice(end)}`;
+  const caret = before.length + glue.length + joined.length;
+  input.setSelectionRange(caret, caret);
+  showGroceryPreview();
 }
 
 async function clearPicked() {
@@ -1069,6 +1125,8 @@ function wire() {
   });
 
   $('groceryForm').addEventListener('submit', submitGrocery);
+  $('groceryInput').addEventListener('input', showGroceryPreview);
+  $('groceryInput').addEventListener('paste', pasteIntoGroceryBox);
   $('clearPicked').addEventListener('click', clearPicked);
   wireVoice();
 

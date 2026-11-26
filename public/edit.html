@@ -41,8 +41,8 @@
         <input
           type="text"
           id="groceryInput"
-          maxlength="80"
-          placeholder="Add milk, eggs…"
+          maxlength="600"
+          placeholder="Milk, eggs and bread…"
           enterkeyhint="done"
           autocapitalize="sentences"
         />
@@ -51,6 +51,7 @@
           🎤
         </button>
       </form>
+      <p class="hint grocery-preview" id="groceryPreview" hidden aria-live="polite"></p>
       <p class="hint voice-hint" id="voiceHint" hidden></p>
 
       <div id="groceryOpen"></div>

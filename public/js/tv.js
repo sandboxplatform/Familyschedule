@@ -90,6 +90,8 @@ const state = {
   members: new Map(),
   days: [],
   groceries: [],
+  // Whether the shopping column has been opened to show all of a long list.
+  shoppingOpen: false,
   today: todayKey(),
   mode: storedView() || 'agenda',
   /* Steps away from now, for paging the week and month views — weeks in one,
@@ -368,6 +370,9 @@ function renderShopping() {
   count.textContent = String(open.length);
   head.append(title, count);
 
+  const previous = el.shopping.querySelector('.shopping-items');
+  const keptScroll = previous && state.shoppingOpen ? previous.scrollTop : 0;
+
   const list = document.createElement('ul');
   list.className = 'shopping-items';
   for (const item of open) {
@@ -378,8 +383,58 @@ function renderShopping() {
 
   el.shopping.hidden = false;
   el.shopping.replaceChildren(head, list);
-  // A list longer than the column ends in "+N more" rather than a cut-off row.
-  requestAnimationFrame(() => trimOverflow(list));
+
+  if (state.shoppingOpen) {
+    // Opened up: the whole list, scrolled within the column, and a way back.
+    list.classList.add('is-open');
+    const less = document.createElement('li');
+    less.className = 'more';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'more-button';
+    button.textContent = 'Show less';
+    button.addEventListener('click', closeShopping);
+    less.append(button);
+    list.append(less);
+    // A live update redraws the list; it should not jump back to the top.
+    list.scrollTop = keptScroll;
+    // Somebody still scrolling is still reading; the fold-away waits.
+    list.addEventListener('scroll', keepShoppingOpen, { passive: true });
+    return;
+  }
+
+  // A list longer than the column ends in "+N more" rather than a cut-off row;
+  // clicking it opens the list to scroll through the rest.
+  requestAnimationFrame(() => trimOverflow(list, { onMore: openShopping }));
+}
+
+/**
+ * Opens the shopping column to its full length, scrolled to the first item
+ * that had been hidden. A wall display folds it away again on its own after a
+ * while, the way the calendar finds its way back to now.
+ */
+const SHOPPING_OPEN_MS = 2 * 60 * 1000;
+let shoppingTimer = null;
+
+function openShopping(firstHidden = 0) {
+  state.shoppingOpen = true;
+  renderShopping();
+  const list = el.shopping.querySelector('.shopping-items');
+  const target = list?.children[firstHidden];
+  if (target) list.scrollTo({ top: Math.max(0, target.offsetTop - 8), behavior: 'smooth' });
+  keepShoppingOpen();
+}
+
+function keepShoppingOpen() {
+  clearTimeout(shoppingTimer);
+  shoppingTimer = setTimeout(closeShopping, SHOPPING_OPEN_MS);
+}
+
+function closeShopping() {
+  clearTimeout(shoppingTimer);
+  if (!state.shoppingOpen) return;
+  state.shoppingOpen = false;
+  renderShopping();
 }
 
 function todayRow(item, minutes) {
@@ -1114,7 +1169,12 @@ function renderLegend() {
  * Hides whatever does not fit a column and adds a "+N more" marker, so a busy
  * Saturday degrades gracefully instead of spilling off the screen.
  */
-function trimOverflow(list) {
+/**
+ * Hides whatever does not fit and ends the list in "+N more". With `onMore`,
+ * that line is a button that hands back how many rows were showing, for a list
+ * that can open up to show the rest.
+ */
+function trimOverflow(list, { onMore } = {}) {
   const existing = list.querySelector('.more');
   if (existing) existing.remove();
   const items = [...list.children];
@@ -1139,7 +1199,17 @@ function trimOverflow(list) {
 
   const more = document.createElement(list.tagName === 'UL' ? 'li' : 'div');
   more.className = 'more';
-  more.textContent = `+${hiddenCount} more`;
+  if (onMore) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'more-button';
+    button.textContent = `+${hiddenCount} more`;
+    button.setAttribute('aria-label', `Show ${hiddenCount} more`);
+    button.addEventListener('click', () => onMore(visible.length));
+    more.append(button);
+  } else {
+    more.textContent = `+${hiddenCount} more`;
+  }
   list.append(more);
 }
 
