@@ -137,31 +137,52 @@ function scheduleRefresh(delay) {
 
 async function refresh() {
   try {
-    const { from, to } = fetchRange();
-    const payload = await api.calendar(from, to);
-
-    state.settings = payload.settings;
-    state.today = payload.today;
-    state.members = new Map(payload.members.map((member) => [member.id, member]));
-    state.days = payload.days;
-    state.groceries = payload.groceries || [];
-
-    applyTheme(payload.settings.theme);
-    el.familyName.textContent = payload.settings.familyName;
-    el.todayLong.textContent = longDate(payload.today);
+    if (!(await load())) return;
 
     renderLegend();
     // A screen that has been given a view of its own keeps it; anything else
     // follows whatever the household set in the editor.
-    setMode(storedView() || payload.settings.defaultView, { persist: false });
+    setMode(storedView() || state.settings.defaultView, { persist: false });
     el.status.setAttribute('data-state', 'live');
     loadWeather();
   } catch {
     el.status.setAttribute('data-state', 'reconnecting');
+    // Try again soon rather than at the next five-minute refresh: a screen that
+    // missed its first load has nothing to show until one succeeds.
+    scheduleRefresh(5000);
   }
 }
 
+/** Fetches the days the current view needs, and everything drawn around them. */
+let loadId = 0;
+async function load() {
+  const id = ++loadId;
+  const { from, to } = fetchRange();
+  const payload = await api.calendar(from, to);
+  // A later load already landed; this one would put older days back.
+  if (id !== loadId) return false;
+
+  state.settings = payload.settings;
+  state.today = payload.today;
+  state.members = new Map(payload.members.map((member) => [member.id, member]));
+  state.days = payload.days;
+  state.groceries = payload.groceries || [];
+
+  applyTheme(payload.settings.theme);
+  el.familyName.textContent = payload.settings.familyName;
+  el.todayLong.textContent = longDate(payload.today);
+  return true;
+}
+
+/** Whether the days already loaded cover what the current view draws. */
+function hasRange() {
+  const { from, to } = fetchRange();
+  const loaded = new Set(state.days.map((day) => day.date));
+  return loaded.has(from) && loaded.has(to);
+}
+
 function render() {
+  renderShopping();
   if (state.mode === 'month') {
     renderMonth();
     return;
@@ -289,9 +310,13 @@ function renderToday(dateKey = state.today) {
     ? `${items.length} ${items.length === 1 ? 'thing' : 'things'} on`
     : '';
 
+  // Only today has a "now". A day already gone is all past; a day still to
+  // come is none of it, rather than greyed out up to the current time.
+  const clock = isNow ? minutes : dateKey < state.today ? Infinity : -Infinity;
+
   el.todayList.replaceChildren(
     ...(items.length
-      ? items.map((item) => todayRow(item, minutes))
+      ? items.map((item) => todayRow(item, clock))
       : [blankInstall()
           // "Enjoy it" is the wrong note for a calendar nobody has filled in
           // yet: the day is not clear, the household simply has not started.
@@ -303,47 +328,49 @@ function renderToday(dateKey = state.today) {
     renderSpotlight(items, minutes);
     renderWhoNext(minutes);
   }
-  renderShopping();
   requestAnimationFrame(() => trimOverflow(el.todayList));
 }
 
 /**
- * What is still on the shopping list, read-only, so whoever is heading out can
- * see it from the doorway. Ticked items are already in a trolley somewhere and
- * are left out; with nothing left to get the strip goes away entirely.
+ * What is still on the shopping list, read-only, in a narrow column of its own
+ * beside whichever view is up — so the whole of it is on screen with the
+ * calendar rather than squeezed under today. Ticked items are already in a
+ * trolley somewhere and are left out; with nothing left to get, the column
+ * goes and the calendar has the width back.
  */
-const SHOPPING_SHOWN = 8;
-
 function renderShopping() {
   const open = state.groceries
     .filter((item) => !item.checked)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  el.main.classList.toggle('has-shopping', open.length > 0);
   if (!open.length) {
     el.shopping.hidden = true;
     el.shopping.replaceChildren();
     return;
   }
 
-  const eyebrow = document.createElement('p');
-  eyebrow.className = 'eyebrow';
-  eyebrow.textContent = `Shopping list · ${open.length}`;
+  const head = document.createElement('div');
+  head.className = 'shopping-head';
+  const title = document.createElement('h2');
+  title.textContent = 'Shopping';
+  const count = document.createElement('span');
+  count.className = 'shopping-count';
+  count.textContent = String(open.length);
+  head.append(title, count);
 
   const list = document.createElement('ul');
   list.className = 'shopping-items';
-  for (const item of open.slice(0, SHOPPING_SHOWN)) {
+  for (const item of open) {
     const li = document.createElement('li');
     li.textContent = item.name;
     list.append(li);
   }
-  if (open.length > SHOPPING_SHOWN) {
-    const more = document.createElement('li');
-    more.className = 'more';
-    more.textContent = `+${open.length - SHOPPING_SHOWN} more`;
-    list.append(more);
-  }
 
   el.shopping.hidden = false;
-  el.shopping.replaceChildren(eyebrow, list);
+  el.shopping.replaceChildren(head, list);
+  // A list longer than the column ends in "+N more" rather than a cut-off row.
+  requestAnimationFrame(() => trimOverflow(list));
 }
 
 function todayRow(item, minutes) {
@@ -678,6 +705,7 @@ function renderTimeline(dateKey = state.today) {
   wrap.className = 'timeline-inner';
 
   if (allDay.length) {
+    wrap.classList.add('has-all-day');
     const strip = document.createElement('div');
     strip.className = 'all-day-strip';
     const label = document.createElement('p');
@@ -1001,6 +1029,9 @@ function makeDayTarget(node, date) {
 function openDay(date) {
   state.dayOffset = daysBetween(state.today, date);
   setMode('day');
+  // On a phone the page scrolls; the day opens at the top, not wherever the
+  // tapped square happened to be.
+  window.scrollTo({ top: 0 });
   scheduleReturnToNow();
   // The day view fetches its own few days either side of the one on screen.
   refresh();
@@ -1175,7 +1206,11 @@ function tick() {
     refresh();
     return;
   }
-  if (state.settings) renderToday();
+  // The panel follows the day on screen. Redrawing today here regardless put
+  // today back under a day somebody had just opened — and on a phone, where
+  // the panel is the whole of the day view, that looked like the tap had
+  // done nothing.
+  if (state.settings) renderToday(state.mode === 'day' ? shownDayKey() : state.today);
   rotateIfDue(now);
 }
 
@@ -1191,7 +1226,6 @@ function rotateIfDue(now) {
 
 function setMode(mode, { persist = true } = {}) {
   const next = VIEWS.includes(mode) ? mode : 'agenda';
-  const widened = needsWiderRange(next) && !needsWiderRange(state.mode);
 
   if (next !== 'week' && state.weekOffset) state.weekOffset = 0;
   if (next !== 'month' && state.monthOffset) state.monthOffset = 0;
@@ -1211,17 +1245,23 @@ function setMode(mode, { persist = true } = {}) {
 
   if (persist) rememberView(next);
 
-  // Month reaches further back and forward than the other views, so it needs a
-  // fresh fetch before it can draw anything.
-  if (widened) {
+  // Nothing has loaded yet, so there is nothing to draw a view from.
+  if (!state.settings) {
     refresh();
     return;
   }
+  // Each view loads its own span of days. Coming from one that loaded fewer —
+  // day loads a week around one date — drawing straight away fills the gaps
+  // with whatever is to hand: a week starting on Wednesday, a month of blanks.
+  if (!hasRange()) {
+    load()
+      .then((fresh) => {
+        if (fresh) render();
+      })
+      .catch(() => el.status.setAttribute('data-state', 'reconnecting'));
+    return;
+  }
   render();
-}
-
-function needsWiderRange(mode) {
-  return mode === 'month';
 }
 
 /**

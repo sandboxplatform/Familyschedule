@@ -487,9 +487,13 @@ async function serveStatic(req, res, url, publicDir) {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'Content-Length': stat.size,
     ETag: etag,
-    // HTML revalidates every load so a redeploy reaches the TV; hashed-free
-    // assets get a short cache that still survives a flaky wifi moment.
-    'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300',
+    // Pages, scripts and styles all revalidate on every load: none of them is
+    // hashed, so a cached script outlives a redeploy and runs against the new
+    // page — a fix that looks as though it never shipped. The ETag keeps an
+    // unchanged file to a 304. Icons and fonts change rarely and may sit.
+    'Cache-Control': ['.html', '.js', '.css', '.webmanifest'].includes(ext)
+      ? 'no-cache'
+      : 'public, max-age=300',
   });
 
   if (req.method === 'HEAD') {
