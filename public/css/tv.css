@@ -19,9 +19,23 @@ body.show-cursor {
 }
 
 .tv {
+  /* The display runs tighter than the phone editor: the content is what is
+     being looked at from across the room, so gaps, padding and corners give
+     it room rather than taking it. Scoped here, so the editor keeps its own
+     touch-sized spacing. */
+  --space-3: 0.55rem;
+  --space-4: 0.7rem;
+  --space-5: 0.9rem;
+  --space-6: 1.1rem;
+  --space-7: 1.4rem;
+  --radius-sm: 0.3rem;
+  --radius-md: 0.45rem;
+  --radius-lg: 0.6rem;
+  --radius-xl: 0.8rem;
+
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: var(--space-5);
+  gap: var(--space-4);
   height: 100vh;
   height: 100dvh;
   padding: var(--space-6) var(--space-7);
@@ -157,7 +171,10 @@ body.show-cursor {
 /* With something on the shopping list, it takes a narrow column of its own at
    the right of every view, so the list and the calendar share one screen. */
 .tv-main {
-  --shopping-col: minmax(11rem, 0.42fr);
+  /* A fixed range rather than a share of the width: as a fraction it took a
+     third of the screen in week and month, where it shares with one column
+     instead of two. */
+  --shopping-col: minmax(10rem, 14rem);
 }
 
 .tv-main.has-shopping,
@@ -258,6 +275,38 @@ body.show-cursor {
 
 .shopping-items li.more::before {
   display: none;
+}
+
+/* Opened from "+N more": the whole list, scrolling inside the column. */
+.shopping-items {
+  position: relative;
+}
+
+.shopping-items.is-open {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.shopping-items .more-button {
+  padding: 0.15rem 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+body.show-cursor .shopping-items .more-button {
+  cursor: pointer;
+}
+
+.shopping-items .more-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* -- today panel ---------------------------------------------------------- */

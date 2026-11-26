@@ -11,126 +11,19 @@
  * and hand it a pretend browser.
  */
 
-/** Matches GROCERY_NAME_MAX on the server; a longer item would be refused. */
-export const MAX_ITEM_LENGTH = 80;
+import { MAX_ITEM_LENGTH, splitItems } from './listparse.js';
 
-// What people actually say before the list itself, longest first so "can you
-// add" wins over "add". Stripped repeatedly: "please can you add …".
-const LEAD_INS = [
-  'can you please add',
-  'could you please add',
-  'can you add',
-  'could you add',
-  'will you add',
-  'would you add',
-  'please add',
-  'we are out of',
-  "we're out of",
-  'we have run out of',
-  "we've run out of",
-  'we need some',
-  'we need',
-  'i need',
-  'we want',
-  'remember to get',
-  'remember',
-  'put',
-  'add',
-  'get',
-  'buy',
-  'please',
-  'okay',
-  'ok',
-  'also',
-  'and',
-];
-
-// The tail people add: "… to the shopping list, thanks".
-const TAILS = [
-  'to the shopping list',
-  'on the shopping list',
-  'to the list',
-  'on the list',
-  'to shopping',
-  'please',
-  'thanks',
-  'thank you',
-];
-
-// Words that are never an item on their own. Saying just "add" must add
-// nothing — an item called "Add" is exactly the bug this guards against.
-const FILLER = new Set([
-  'add', 'and', 'also', 'please', 'plus', 'some', 'a', 'an', 'the', 'um', 'uh', 'er', 'erm',
-  'ok', 'okay', 'thanks', 'thank you', 'get', 'buy', 'put', 'comma',
-]);
+export { MAX_ITEM_LENGTH };
 
 /**
  * "add bananas, coffee beans and tin foil" → ['Bananas', 'Coffee beans', 'Tin foil'].
  *
- * Splits on commas, semicolons, "and", "&", "plus" and the dictated word
- * "comma"; strips the lead-in and the tail; drops repeats; clamps each item to
- * what the store accepts. "Salt and vinegar crisps" comes back as two items —
- * the price of splitting on "and", which is how almost every list is said.
+ * The shared list rules (see listparse.js) plus what only speech needs: the
+ * lead-in and tail people say, "plus", and the dictated word "comma". Saying
+ * only "add" adds nothing.
  */
 export function parseSpokenItems(transcript, { max = MAX_ITEM_LENGTH } = {}) {
-  if (typeof transcript !== 'string') return [];
-
-  let text = transcript
-    .replace(/[‘’]/g, "'")
-    .replace(/\bcomma\b/gi, ',')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  text = stripEdges(text);
-
-  const seen = new Set();
-  const items = [];
-  for (const part of text.split(/\s*(?:[,;&]|\band\b|\bplus\b)\s*/i)) {
-    let item = stripEdges(part)
-      .replace(/^(?:some|a|an)\s+/i, '')
-      .replace(/[.!?:]+$/g, '')
-      .trim();
-    if (!item || FILLER.has(item.toLowerCase())) continue;
-
-    item = item.slice(0, max).trim();
-    item = item.charAt(0).toLocaleUpperCase() + item.slice(1);
-
-    const key = item.toLocaleLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push(item);
-  }
-  return items;
-}
-
-function stripEdges(value) {
-  let text = value.trim().replace(/^[,;.\s]+|[,;.!?\s]+$/g, '');
-  let changed = true;
-  while (changed && text) {
-    changed = false;
-    const lower = text.toLowerCase();
-    for (const lead of LEAD_INS) {
-      if (lower === lead) {
-        text = '';
-        changed = true;
-        break;
-      }
-      if (lower.startsWith(`${lead} `) || lower.startsWith(`${lead},`)) {
-        text = text.slice(lead.length).replace(/^[,\s]+/, '');
-        changed = true;
-        break;
-      }
-    }
-    if (changed) continue;
-    for (const tail of TAILS) {
-      if (lower.endsWith(` ${tail}`) || lower.endsWith(`,${tail}`)) {
-        text = text.slice(0, text.length - tail.length).replace(/[,\s]+$/, '');
-        changed = true;
-        break;
-      }
-    }
-  }
-  return text;
+  return splitItems(transcript, { spoken: true, max });
 }
 
 // -- the recogniser ---------------------------------------------------------
