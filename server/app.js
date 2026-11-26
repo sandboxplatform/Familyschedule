@@ -10,6 +10,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { addDays, isDateKey, rangeKeys, todayKey } from './dates.js';
@@ -45,6 +46,7 @@ export function createApp(store, {
   storage = { persistent: true, platform: null, path: null },
 } = {}) {
   const clients = new Set();
+  const build = frontEndBuild(publicDir);
 
   store.on('change', (change) => broadcast(clients, 'change', change));
 
@@ -56,7 +58,7 @@ export function createApp(store, {
         return;
       }
       if (url.pathname.startsWith('/api/')) {
-        await handleApi(req, res, url, { store, weather, clients, auth, accounts, storage });
+        await handleApi(req, res, url, { store, weather, clients, auth, accounts, storage, build });
         return;
       }
       await serveStatic(req, res, url, publicDir);
@@ -106,7 +108,7 @@ function denyUnauthenticated(req, res, url, auth) {
 }
 
 async function handleApi(req, res, url, ctx) {
-  const { store, weather, clients, auth, accounts, storage } = ctx;
+  const { store, weather, clients, auth, accounts, storage, build } = ctx;
   const route = url.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '');
   const segments = route ? route.split('/') : [];
   const method = req.method.toUpperCase();
@@ -277,7 +279,7 @@ async function handleApi(req, res, url, ctx) {
   // GET /api/stream — server-sent events so the TV redraws the moment a phone
   // saves something. Polling would be simpler but visibly laggy in a kitchen.
   if (segments[0] === 'stream' && method === 'GET') {
-    openStream(req, res, clients);
+    openStream(req, res, clients, build);
     return;
   }
 
@@ -397,14 +399,14 @@ async function handleApi(req, res, url, ctx) {
   }
 
   if (segments[0] === 'health' && method === 'GET') {
-    sendJson(res, 200, { ok: true, uptime: Math.round(process.uptime()) });
+    sendJson(res, 200, { ok: true, uptime: Math.round(process.uptime()), build });
     return;
   }
 
   sendJson(res, 404, { error: 'Unknown endpoint' });
 }
 
-function openStream(req, res, clients) {
+function openStream(req, res, clients, build) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
@@ -412,7 +414,9 @@ function openStream(req, res, clients) {
     'X-Accel-Buffering': 'no',
   });
   res.write('retry: 3000\n\n');
-  res.write(`event: hello\ndata: ${JSON.stringify({ at: Date.now() })}\n\n`);
+  // The build rides on the greeting. A deploy restarts the server, every
+  // screen's stream reconnects, and the TV compares what it was loaded with.
+  res.write(`event: hello\ndata: ${JSON.stringify({ at: Date.now(), build })}\n\n`);
 
   const heartbeat = setInterval(() => res.write(': ping\n\n'), HEARTBEAT_MS);
   heartbeat.unref?.();
@@ -438,6 +442,39 @@ function broadcast(clients, event, data) {
 }
 
 // -- static ---------------------------------------------------------------
+
+/**
+ * A fingerprint of everything the browser is sent: the pages, scripts, styles
+ * and icons. It changes exactly when a deploy changes what a screen would
+ * load — not on a restart that ships nothing new — so a wall display can
+ * reload itself for a real update and stay put otherwise. Read once at start:
+ * the files only change by deploying.
+ */
+export function frontEndBuild(publicDir) {
+  const hash = createHash('sha256');
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fsSync.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        hash.update(path.relative(publicDir, full));
+        hash.update('\0');
+        hash.update(fsSync.readFileSync(full));
+        hash.update('\0');
+      }
+    }
+  };
+  walk(publicDir);
+  return hash.digest('hex').slice(0, 12);
+}
 
 const PAGES = new Map([
   ['/', 'index.html'],
